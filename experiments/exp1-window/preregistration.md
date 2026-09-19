@@ -727,3 +727,61 @@ medians where either arm is censored, since those may be bounds rather
 than point estimates (C5). Any directional or magnitude claim in the
 write-up must be stated in terms of the summary rows' `estimate_kind` and
 bounds, and must say so explicitly.
+
+---
+
+## Addendum 2 — 2026-09-20, before any Experiment 1 data collection
+
+Task 11's pilot ran 3 trials per CNI (Cilium, Calico, Antrea; 9 trials
+total, interleaved churn 1/10/60 per CNI) against `data/raw/pilot2/`,
+kept separate from `data/raw/exp1/`. Decided before any Experiment 1 run;
+no full-dataset result has been seen.
+
+**Churn (Known gap 2): confirmed, no change.** Across all 9 trials no Pod
+was evicted (`kubectl get events -A | grep -i evict` empty in every
+cluster) and control-plane node memory stayed at 12.4%–20.6% of the
+Docker VM's 7.65 GiB limit — well below the 80% ceiling this pilot was
+checking against — at churn 60 on every CNI. Achieved churn rate tracked
+configured within about 5–8% (e.g. Cilium churn=60: configured 59/min,
+achieved 54.9/min; Calico: 54.6/min; Antrea: 54.6/min), consistent across
+all three CNIs rather than specific to one. `create_failed` counts (1 at
+churn=10, 6 at churn=60) were identical in shape across all three CNIs,
+which is evidence of a `kubectl`-side rate ceiling at this creation
+frequency, not a CNI-specific fault, and it did not push the achieved
+rate check below the recorded value or cause any resource exhaustion.
+Churn levels 1/10/60 are retained unchanged.
+
+**Sustained-`k` threshold (Known gap 3): not validated by this pilot,
+same limitation as D1.** All 9 pilot trials were left-censored — every
+trial's `prober.jsonl` was `Blocked` from its first observation, across
+all three CNIs and all three churn levels. `k = 3` exists to reject a
+single dropped-packet blip from being misread as the start of enforcement,
+but that failure mode can only be exercised on a stream that contains a
+genuine `Allowed → Blocked` transition, and this pilot — like every run
+recorded before it — contains none. `k = 3` is retained as the reasoned
+default; validating it still requires the positive control D1 already
+recommends (a deliberately delayed policy application), not more volume
+at the current design.
+
+**B/C divergence flag: pilot confirms Addendum 1 B2's finding, no
+threshold change.** 3 of 9 pilot trials tripped the 5 ms flag: Cilium
+churn=1 (−12.538 ms), Cilium churn=60 (−5.010 ms), Antrea churn=60
+(−7.965 ms); the other 6 fell inside ±5 ms (range −2.521 ms to −4.540 ms
+in that group). This widens, rather than narrows, the case B2 already
+made: the pilot's observed skew spans −2.5 ms to −12.5 ms, wider than
+ADR 0003's original three-trial band. Per B2's own ruling, the threshold
+is not recalibrated after observing how often it fires — this pilot is
+exactly the pre-committed check that ruling deferred to, and its answer is
+the same: retain 5 ms, expect it to flag roughly a third of trials at the
+current architecture, and treat each flagged trial as a candidate for
+investigation rather than as evidence the threshold is wrong.
+
+**`error_rate`: clean.** All 9 trials recorded `error_rate = 0.0` (bar:
+`< 0.01`), and none were excluded.
+
+**Decision:** `k = 3` and churn levels 1/10/60 are retained unchanged. No
+frozen parameter is modified by this addendum. D1's recommended positive
+control remains the open prerequisite before Task 12's full run, and this
+pilot's all-left-censored result — replicated now across three CNIs and
+three churn levels rather than one CNI at churn=1 — makes that
+prerequisite more load-bearing, not less.
