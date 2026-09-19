@@ -785,3 +785,53 @@ control remains the open prerequisite before Task 12's full run, and this
 pilot's all-left-censored result — replicated now across three CNIs and
 three churn levels rather than one CNI at churn=1 — makes that
 prerequisite more load-bearing, not less.
+
+---
+
+## Addendum 3 — 2026-09-20, before any Experiment 1 data collection
+
+D1's recommended positive control was run before Task 12: `default-deny-
+ingress` was applied at an imposed ~2000 ms delay after `t_ready`
+(candidate C), instead of before it, against a live Cilium, Calico and
+Antrea cluster each. This is an instrument check, not part of Experiment
+1; its output lives in `data/raw/positive-control/`, is not pooled with
+`data/raw/exp1/` or `data/raw/pilot2/`, and is not added to the matrix.
+
+**Detection path confirmed on all three CNIs.** Cilium recovered a
+window of 2307.0 ms; Calico 2250.0 ms; each within a few hundred
+milliseconds of the 2000 ms imposed delay, the difference being real
+enforcement-reaction latency (Cilium: 127.8 ms from `kubectl apply`
+returning to the sustained-Blocked run's start). This is the outcome D1
+asked for: an instrument that has never observed a transition before now
+has, on demand, and the recovered magnitude is the right order and sign.
+
+**D2 (`first_sustained` has no lower bound at `t_ready`) is not merely an
+assumption: it occurred, live, on the Antrea run (`pc-antrea-2000ms`).**
+Four observations at offsets 100–300 ms — before `t_ready` at
+2660.470 ms — were classified `Blocked`, immediately followed by
+genuinely `Allowed` traffic once the listener opened; `first_sustained`
+over the unfiltered stream found the pre-ready run first and reported
+`t_blocked = 2657.192 ms`, giving `window_ns` = **−3.278 ms**. Restricting
+the search to observations at or after `t_ready` — exactly the fix D2
+proposed as a possible remedy — recovers `t_blocked = 4884.867 ms`,
+`window` = **2224.4 ms**, consistent with Cilium and Calico's recovered
+windows in the same run.
+
+**Fixed, not merely documented.** `npw.analysis.trial.evaluate` now
+filters `t.observations` to `offset_ns >= t_ready_c_ns` before calling
+`first_sustained`, with the specific Antrea run's numbers as a regression
+test (`tests/test_trial.py`,
+`test_pre_ready_blocked_run_does_not_produce_a_negative_window`). D2's
+own text above is left as the historical record of the reasoning that
+motivated the fix; this addendum is where the fix itself, and the
+evidence that it was necessary, are recorded. The `n_negative_window`
+column D2 added to `summary.md` remains in place as a second, independent
+check: post-fix, a negative window should not occur again, and that
+column is what would surface it if it did.
+
+**Consequence for Task 12.** The pre-ready artefact is confirmed to be
+rare (1 of 12 live trials across the pilot and this positive control:
+9 pilot trials plus 3 positive-control trials) but real, and — before
+this fix — silently indistinguishable from a genuine left-censored
+result at the analysis layer. Task 12's full run proceeds on the
+corrected code.

@@ -243,7 +243,23 @@ def evaluate(t: Trial) -> TrialResult:
     b_c_skew_ns = t.t_ready_b_ns - t.t_ready_c_ns
     b_c_flagged = abs(b_c_skew_ns) > BC_GAP_MAX_NS
 
-    t_blocked = first_sustained(t.observations, t.k, want="blocked")
+    # first_sustained has no lower bound at t_ready on its own (Addendum 1
+    # D2): a dial made before the victim's listener opens -- but after its
+    # Pod already has an IP -- gets ECONNREFUSED, which
+    # internal/probe/outcome.go classifies Blocked exactly like real
+    # enforcement. If that pre-ready run happens to reach length k, an
+    # unfiltered scan finds it first and reports t_blocked < t_ready: a
+    # harness artefact printed as a negative "measurement" rather than as
+    # what it is. This is not a hypothetical -- it was observed live
+    # during the Task-11.5 positive control (Antrea, run
+    # pc-antrea-2000ms): four pre-ready Blocked observations, immediately
+    # followed by genuinely Allowed traffic once the listener opened.
+    # Restricting the search to observations at or after t_ready removes
+    # exactly that artefact and nothing else: t_ready is a fact about the
+    # victim, not a policy decision, so no post-ready observation is ever
+    # discarded by this filter.
+    post_ready = [o for o in t.observations if o["offset_ns"] >= t.t_ready_c_ns]
+    t_blocked = first_sustained(post_ready, t.k, want="blocked")
     right_censored = t_blocked is None
     window = compute_window(t.t_ready_c_ns, t_blocked) if t_blocked is not None else None
     censoring_time_ns = t.observations[-1]["offset_ns"] - t.t_ready_c_ns if right_censored else None
@@ -257,10 +273,13 @@ def evaluate(t: Trial) -> TrialResult:
     # non-Allowed noise) before the sustained run must not be mistaken
     # for "a transition was witnessed", and two observations can
     # legitimately share an offset_ns, which an equality-on-offset check
-    # against a single fixed observation would get wrong.
+    # against a single fixed observation would get wrong. Scanned over
+    # post_ready, the same filtered stream t_blocked was found in, so a
+    # pre-ready artefact observation cannot masquerade as the witnessed
+    # Allowed half of a transition either.
     censored = t_blocked is not None and not any(
         str(o["outcome"]).lower() == "allowed" and o["offset_ns"] < t_blocked
-        for o in t.observations
+        for o in post_ready
     )
 
     return TrialResult(

@@ -297,3 +297,63 @@ def test_jsonl_malformed_line_names_the_file(tmp_path):
     )
     with pytest.raises(ValueError, match="prober.jsonl"):
         load_trial(d)
+
+
+def test_pre_ready_blocked_run_does_not_produce_a_negative_window(tmp_path):
+    # Reproduces a real, observed defect (Addendum 1 D2, confirmed live on
+    # Antrea during the Task-11.5 positive control, run pc-antrea-2000ms):
+    # the prober can start dialing a Pod whose IP was assigned before its
+    # listener opened, and a pre-ready ECONNREFUSED is classified Blocked
+    # (internal/probe/outcome.go), producing a sustained "Blocked" run
+    # that starts and ends *before* t_ready. Without a t_ready lower
+    # bound, first_sustained finds that pre-ready run first and reports
+    # t_blocked < t_ready -- a negative window that is a harness artefact,
+    # not a measurement, and would be printed as "no window detected
+    # above the floor" with nothing to distinguish it from a genuine
+    # left-censored trial.
+    d = tmp_path / "run-0000-002"
+    _write(
+        d,
+        [
+            _o(100, "Blocked"),  # pre-ready ECONNREFUSED artefact
+            _o(200, "Blocked"),
+            _o(300, "Blocked"),
+            _o(1500, "Allowed"),  # t_ready has now happened; genuinely Allowed
+            _o(2500, "Allowed"),
+            _o(3500, "Blocked"),  # the real, post-ready enforcement transition
+            _o(4500, "Blocked"),
+            _o(5500, "Blocked"),
+        ],
+        c_ns=1000,  # t_ready sits strictly between the artefact and the real transition
+        b_ns=900,
+    )
+    r = evaluate(load_trial(d))
+    assert r.window_ns == 2500  # 3500 - 1000, the real post-ready transition
+    assert r.window_ns > 0
+    assert r.censored is False
+    assert r.right_censored is False
+
+
+def test_pre_ready_blocked_run_with_no_post_ready_transition_is_right_censored(tmp_path):
+    # Same artefact, but with nothing after t_ready sustained-Blocked
+    # within the trial: the corrected reading is right-censored (no
+    # window observed), not a negative-window "measurement" taken from
+    # the pre-ready noise.
+    d = tmp_path / "run-0000-003"
+    _write(
+        d,
+        [
+            _o(100, "Blocked"),
+            _o(200, "Blocked"),
+            _o(300, "Blocked"),
+            _o(1500, "Allowed"),
+            _o(2500, "Allowed"),
+            _o(3500, "Allowed"),
+        ],
+        c_ns=1000,
+        b_ns=900,
+    )
+    r = evaluate(load_trial(d))
+    assert r.right_censored is True
+    assert r.window_ns is None
+    assert r.censoring_time_ns == 3500 - 1000
