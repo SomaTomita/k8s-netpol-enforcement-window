@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prober
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prober
+  namespace: prober
+---
+# Cluster-scoped, not a Role in the target namespace: every trial runs in
+# its own freshly-created namespace (t-<run-id>, see scripts/trial.sh), so
+# there is no fixed namespace a Role could be bound in ahead of time — a
+# namespaced Role cannot be pre-created for a name that does not exist
+# yet. The verbs stay the minimum the prober's -target-selector watch
+# needs (read-only on Pods); nothing here grants write access to anything.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prober-watch-victim
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prober-watch-victim
+subjects:
+  - kind: ServiceAccount
+    name: prober
+    namespace: prober
+roleRef:
+  kind: ClusterRole
+  name: prober-watch-victim
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  # __RUN_ID__ is substituted by scripts/trial.sh before apply. The Pod
+  # lives in the long-lived `prober` namespace rather than the trial's own
+  # namespace (it must not be subject to the policy under test), so its
+  # name has to carry the run id to stay unique across trials.
+  name: prober-__RUN_ID__
+  namespace: prober
+  labels:
+    role: prober
+spec:
+  serviceAccountName: prober
+  # Never restart: this Pod runs one measurement pass and exits. A restart
+  # would start a new -run-epoch-anchored stream indistinguishable from the
+  # first in the resulting logs.
+  restartPolicy: Never
+  containers:
+    - name: prober
+      image: netpol-window/prober:dev
+      imagePullPolicy: IfNotPresent
+      # -target-selector makes the prober watch the Kubernetes API for the
+      # victim Pod's IP internally (in-cluster config, via serviceAccountName
+      # above), rather than being told a static address. This is what lets
+      # this Pod be deployed — and start watching — before the victim Pod
+      # even exists, instead of being created fresh once an orchestrator
+      # already knows its IP: a freshly-created Pod's own scheduling and
+      # sandbox setup was found to cost 648-904ms in a live pilot (ADR
+      # 0003, "Correction, 2026-09-19") — time during which the prober
+      # cannot see anything at all, whatever the window turns out to be
+      # (see docs/threats-to-validity.md).
+      #
+      # __NS__, __DURATION__, __RUN_EPOCH__ are substituted by
+      # scripts/trial.sh before apply. Running as a Pod (rather than
+      # dialing via `kubectl port-forward` from outside the cluster) is the
+      # point: this traffic traverses the CNI's actual data-plane
+      # enforcement path, so a NetworkPolicy blocking the victim is
+      # observable here, which it is not from outside the cluster.
+      #
+      # -interval and -timeout below are duplicated, as
+      # probe_interval_ns / dial_timeout_ns, in the write_meta(...) call
+      # in src/npw/runner.py's main(). Nothing cross-checks the two at
+      # run time, and they must not drift: the interval is the `p` that
+      # npw.analysis.report._all_at_or_below_floor compares every window
+      # against, so it is the predicate behind the pre-registered "no
+      # window detected above the floor" phrase. Change one, change the
+      # other.
+      args:
+        - "-target-namespace=__NS__"
+        - "-target-selector=role=victim"
+        - "-target-port=8080"
+        - "-interval=1ms"
+        - "-timeout=200ms"
+        - "-duration=__DURATION__"
+        - "-run-epoch=__RUN_EPOCH__"

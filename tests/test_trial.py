@@ -1,0 +1,299 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from npw.analysis.trial import TrialResult, evaluate, load_trial
+
+DEFAULT_PROBE_INTERVAL_NS = 1_000_000
+
+
+def _write(
+    dir: Path, prober, c_ns, b_ns, churn=1, k=3, probe_interval_ns=DEFAULT_PROBE_INTERVAL_NS
+):
+    dir.mkdir()
+    (dir / "prober.jsonl").write_text("".join(json.dumps(o) + "\n" for o in prober))
+    (dir / "victim.jsonl").write_text(json.dumps({"offset_ns": c_ns, "t_ready_method": "C"}) + "\n")
+    (dir / "cri.jsonl").write_text(json.dumps({"offset_ns": b_ns, "t_ready_method": "B"}) + "\n")
+    (dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": dir.name,
+                "cni": "cilium",
+                "churn_rate_per_min": churn,
+                "repetition": 0,
+                "sustained_k": k,
+                "probe_interval_ns": probe_interval_ns,
+            }
+        )
+    )
+
+
+def _o(ns, out):
+    return {"offset_ns": ns, "outcome": out}
+
+
+def test_window_when_allowed_then_blocked(tmp_path):
+    d = tmp_path / "run-0000-000"
+    _write(
+        d,
+        [
+            _o(1000, "Allowed"),
+            _o(2000, "Allowed"),
+            _o(3000, "Blocked"),
+            _o(4000, "Blocked"),
+            _o(5000, "Blocked"),
+        ],
+        c_ns=500,
+        b_ns=400,
+    )
+    r = evaluate(load_trial(d))
+    assert isinstance(r, TrialResult)
+    assert r.window_ns == 2500 and r.censored is False and r.excluded_reason is None
+    assert r.right_censored is False
+    assert r.censoring_time_ns is None
+    assert r.probe_interval_ns == DEFAULT_PROBE_INTERVAL_NS
+
+
+def test_censored_when_blocked_from_first_observation(tmp_path):
+    d = tmp_path / "run-0000-001"
+    _write(d, [_o(1000, "Blocked"), _o(2000, "Blocked"), _o(3000, "Blocked")], c_ns=500, b_ns=400)
+    r = evaluate(load_trial(d))
+    assert r.censored is True and r.window_ns == 500  # floor: first_obs - t_ready
+    assert r.right_censored is False
+
+
+def test_leading_error_does_not_mask_left_censoring(tmp_path):
+    """A transient first-dial Error before the sustained Blocked run must
+    not be read as "an Allowed state was witnessed". Regression test for
+    the bug where `censored` compared t_blocked to observations[0]'s
+    offset: with an Error at index 0 and the k-run starting at index 1,
+    that comparison came back False even though no Allowed observation
+    ever appeared -- exactly the failure mode the prober's own Pod-creation
+    latency (648-904ms under the architecture ADR 0003's pilots used; see
+    ADR 0003's "Correction, 2026-09-19") makes the expected case, not an
+    edge case. It stays the expected case under the current architecture
+    too, where that latency is off the measured path: all six runs
+    carrying a candidate C are still Blocked from their first
+    observation, and none of the ten runs under data/raw/ witnesses an
+    Allowed->Blocked transition (docs/threats-to-validity.md).
+
+    Numbers mirror the reviewer's own repro: 501 observations, one
+    leading Error then all Blocked, t_ready=500 -> window_ns=1500,
+    error_rate~0.002 (well under the 0.05 exclusion threshold), and
+    -- with the fix -- censored=True.
+    """
+    d = tmp_path / "run-0000-005"
+    obs = [_o(1000, "Error")] + [_o((i + 1) * 1000, "Blocked") for i in range(1, 501)]
+    _write(d, obs, c_ns=500, b_ns=400)
+    r = evaluate(load_trial(d))
+    assert r.error_rate == pytest.approx(1 / 501)
+    assert r.excluded_reason is None
+    assert r.window_ns == 1500
+    assert r.censored is True
+
+
+def test_excluded_on_error_rate(tmp_path):
+    d = tmp_path / "run-0000-002"
+    obs = [_o(i * 1000, "Error" if i % 10 == 0 else "Blocked") for i in range(1, 21)]
+    _write(d, obs, c_ns=0, b_ns=0)
+    r = evaluate(load_trial(d))
+    assert r.error_rate == 0.1 and r.excluded_reason == "error_rate>0.05"
+
+
+def test_excluded_trial_still_carries_its_window(tmp_path):
+    """excluded_reason and window_ns are independent: an excluded trial's
+    window must still be reported so the exclusion rate can be assessed
+    alongside real numbers (preregistration.md), not hidden behind None.
+    """
+    d = tmp_path / "run-0000-006"
+    obs = [
+        _o(1000, "Allowed"),
+        _o(2000, "Allowed"),
+        _o(3000, "Blocked"),
+        _o(4000, "Blocked"),
+        _o(5000, "Blocked"),
+        _o(6000, "Error"),
+        _o(7000, "Error"),
+    ]
+    _write(d, obs, c_ns=500, b_ns=400)
+    r = evaluate(load_trial(d))
+    assert r.error_rate == pytest.approx(2 / 7)
+    assert r.excluded_reason == "error_rate>0.05"
+    assert r.window_ns == 2500
+    assert r.censored is False
+
+
+def test_flagged_when_b_c_diverge(tmp_path):
+    d = tmp_path / "run-0000-003"
+    _write(d, [_o(10, "Blocked")] * 3, c_ns=10_000_000, b_ns=0)
+    r = evaluate(load_trial(d))
+    # b_c_skew_ns = t_ready_b - t_ready_c, matching trial.json's own
+    # b_c_skew_ns and ADR 0003's "B - C" pilot table convention.
+    assert r.b_c_skew_ns == -10_000_000 and r.b_c_flagged is True
+
+
+def test_no_sustained_block_is_right_censored_not_excluded(tmp_path):
+    """No sustained Blocked run within the trial means enforcement never
+    arrived while this trial was watching -- the largest unprotected
+    window this trial could report, not a measurement failure. It must
+    not be excluded (preregistration.md names only error_rate > 0.05).
+    censoring_time_ns gives that "at least this long" bound directly.
+    """
+    d = tmp_path / "run-0000-004"
+    _write(d, [_o(1000, "Allowed"), _o(2000, "Allowed")], c_ns=500, b_ns=400)
+    r = evaluate(load_trial(d))
+    assert r.window_ns is None
+    assert r.excluded_reason is None
+    assert r.right_censored is True
+    assert r.censored is False
+    assert r.censoring_time_ns == 1500  # last_offset(2000) - t_ready_c(500)
+
+
+def test_evaluate_raises_on_empty_observations(tmp_path):
+    """An empty prober.jsonl cannot occur in a well-formed dataset --
+    scripts/trial.sh refuses to checksum one -- so this is a corrupt
+    trial directory, not an excluded or censored trial outcome, and must
+    not silently become a fabricated row in trials.csv.
+    """
+    d = tmp_path / "run-0000-007"
+    _write(d, [], c_ns=500, b_ns=400)
+    with pytest.raises(ValueError, match="no observations"):
+        evaluate(load_trial(d))
+
+
+def test_load_trial_raises_on_missing_candidate_c(tmp_path):
+    d = tmp_path / "run-0000-008"
+    d.mkdir()
+    (d / "prober.jsonl").write_text(json.dumps(_o(1000, "Blocked")) + "\n")
+    (d / "victim.jsonl").write_text(json.dumps({"offset_ns": 1, "t_ready_method": "not-C"}) + "\n")
+    (d / "cri.jsonl").write_text(json.dumps({"offset_ns": 1, "t_ready_method": "B"}) + "\n")
+    (d / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": d.name,
+                "cni": "cilium",
+                "churn_rate_per_min": 1,
+                "repetition": 0,
+                "sustained_k": 3,
+                "probe_interval_ns": DEFAULT_PROBE_INTERVAL_NS,
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="candidate-C"):
+        load_trial(d)
+
+
+def test_load_trial_raises_on_missing_candidate_b(tmp_path):
+    d = tmp_path / "run-0000-009"
+    d.mkdir()
+    (d / "prober.jsonl").write_text(json.dumps(_o(1000, "Blocked")) + "\n")
+    (d / "victim.jsonl").write_text(json.dumps({"offset_ns": 1, "t_ready_method": "C"}) + "\n")
+    (d / "cri.jsonl").write_text("")
+    (d / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": d.name,
+                "cni": "cilium",
+                "churn_rate_per_min": 1,
+                "repetition": 0,
+                "sustained_k": 3,
+                "probe_interval_ns": DEFAULT_PROBE_INTERVAL_NS,
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="candidate-B"):
+        load_trial(d)
+
+
+def test_load_trial_raises_on_multiple_candidate_c_records(tmp_path):
+    """Two C-method records in victim.jsonl (e.g. the victim restarted
+    and self-reported twice) is exactly as unusable as zero -- there is
+    no way to pick the right one, so this must fail the same way, not
+    silently take the first or last.
+    """
+    d = tmp_path / "run-0000-013"
+    d.mkdir()
+    (d / "prober.jsonl").write_text(json.dumps(_o(1000, "Blocked")) + "\n")
+    (d / "victim.jsonl").write_text(
+        json.dumps({"offset_ns": 1, "t_ready_method": "C"})
+        + "\n"
+        + json.dumps({"offset_ns": 2, "t_ready_method": "C"})
+        + "\n"
+    )
+    (d / "cri.jsonl").write_text(json.dumps({"offset_ns": 1, "t_ready_method": "B"}) + "\n")
+    (d / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": d.name,
+                "cni": "cilium",
+                "churn_rate_per_min": 1,
+                "repetition": 0,
+                "sustained_k": 3,
+                "probe_interval_ns": DEFAULT_PROBE_INTERVAL_NS,
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="candidate-C"):
+        load_trial(d)
+
+
+def test_victim_jsonl_with_extra_lines_still_loads(tmp_path):
+    """victim.jsonl is `kubectl logs deploy/victim` -- the container's
+    entire stdout -- so a line that isn't the candidate-C self-report
+    must not make the whole trial unreadable, mirroring
+    scripts/trial.sh's own filter-then-require-one parsing.
+    """
+    d = tmp_path / "run-0000-010"
+    d.mkdir()
+    (d / "prober.jsonl").write_text(json.dumps(_o(1000, "Blocked")) + "\n")
+    (d / "victim.jsonl").write_text(
+        json.dumps({"level": "info", "msg": "listener starting"})
+        + "\n"
+        + json.dumps({"offset_ns": 777, "t_ready_method": "C"})
+        + "\n"
+    )
+    (d / "cri.jsonl").write_text(json.dumps({"offset_ns": 1, "t_ready_method": "B"}) + "\n")
+    (d / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": d.name,
+                "cni": "cilium",
+                "churn_rate_per_min": 1,
+                "repetition": 0,
+                "sustained_k": 3,
+                "probe_interval_ns": DEFAULT_PROBE_INTERVAL_NS,
+            }
+        )
+    )
+    t = load_trial(d)
+    assert t.t_ready_c_ns == 777
+
+
+def test_load_trial_raises_on_unsorted_prober_offsets(tmp_path):
+    d = tmp_path / "run-0000-011"
+    _write(d, [_o(1000, "Allowed"), _o(3000, "Blocked"), _o(2000, "Blocked")], c_ns=500, b_ns=400)
+    with pytest.raises(ValueError, match="ascending"):
+        load_trial(d)
+
+
+def test_jsonl_malformed_line_names_the_file(tmp_path):
+    d = tmp_path / "run-0000-012"
+    d.mkdir()
+    (d / "prober.jsonl").write_text("not json\n")
+    (d / "victim.jsonl").write_text(json.dumps({"offset_ns": 1, "t_ready_method": "C"}) + "\n")
+    (d / "cri.jsonl").write_text(json.dumps({"offset_ns": 1, "t_ready_method": "B"}) + "\n")
+    (d / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": d.name,
+                "cni": "cilium",
+                "churn_rate_per_min": 1,
+                "repetition": 0,
+                "sustained_k": 3,
+                "probe_interval_ns": DEFAULT_PROBE_INTERVAL_NS,
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="prober.jsonl"):
+        load_trial(d)

@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "netpol-window: Measuring the unprotected window between Pod readiness and NetworkPolicy enforcement"
+type: software
+authors:
+  - family-names: "Tomita"
+    given-names: "Soma"
+repository-code: "https://github.com/SomaTomita/k8s-netpol-enforcement-window"
+license: Apache-2.0

@@ -1,0 +1,26 @@
+# Minimal Antrea values for a single-node kind cluster created with
+# deploy/kind/antrea.yaml. Verified against
+# `helm show values antrea/antrea --version 2.7.0`
+# at the time of pinning — re-verify when bumping ANTREA_VERSION.
+
+# kind nodes are Docker containers; without this, TCP through the OVS
+# bridge can fail checksum validation on some Docker backends (notably
+# Docker Desktop on macOS), which drops otherwise-valid packets and looks
+# like policy enforcement when it is actually a broken dataplane. This is
+# a TOP-LEVEL key in this chart — confirmed via `helm show values
+# antrea/antrea --version 2.7.0`, line 50 (`disableTXChecksumOffload:
+# false`) — not nested under `agent:`, which is a separate top-level key
+# further down the same values file for antrea-agent's own runtime
+# settings; nesting it there would silently do nothing. See Antrea's
+# docs/kind.md.
+disableTXChecksumOffload: true
+
+# trafficEncapMode is intentionally left unset (chart default: "encap"),
+# not forced to VXLAN to match deploy/cni/calico-values.yaml's
+# encapsulation choice. This cluster is single-node by design (ADR 0002),
+# so all pod-to-pod traffic is node-local and never actually encapsulated
+# regardless of this mode, and policy-enforcement onset — what this
+# project measures — is a control-plane property (when antrea-agent
+# finishes programming OVS flows), not a property of how a forwarded
+# packet is wrapped. This setting is inert on the measured path here; do
+# not add an override for CNI-comparison "parity".

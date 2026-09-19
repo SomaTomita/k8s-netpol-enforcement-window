@@ -1,0 +1,59 @@
+# __NS__ is substituted by scripts/trial.sh before apply: each trial runs
+# in its own freshly-created namespace (t-<run-id>), so that repeated
+# trials cannot share cached CNI identity or policy state for an identical
+# label set. The namespace object is not declared here — the caller
+# creates it, ahead of the NetworkPolicy and of this Deployment, so that
+# the policy is already in place when this Pod starts (see
+# scripts/trial.sh and Taskfile.yml's smoke task, which substitutes
+# `target` for a namespace it creates itself).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victim
+  namespace: __NS__
+  labels:
+    role: victim
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      role: victim
+  template:
+    metadata:
+      labels:
+        role: victim
+    spec:
+      # Teardown speed is a measurement concern, not a convenience. The
+      # default 30s grace period would keep this Pod — and the CNI
+      # endpoint, identity and policy-map entries behind it — alive well
+      # into the *next* trial's enforcement-onset measurement on the same
+      # single node, making trial N's teardown a silent confound on trial
+      # N+1's t_blocked. Nothing here needs to shut down gracefully: the
+      # victim is a stateless listener whose measurement (candidate C) was
+      # already emitted and read at startup.
+      terminationGracePeriodSeconds: 0
+      containers:
+        - name: victim
+          image: netpol-window/victim:dev
+          imagePullPolicy: IfNotPresent
+          # __RUN_EPOCH__ is substituted by scripts/trial.sh before apply,
+          # so this container's self-reported t_ready (candidate C — see
+          # docs/methodology.md) is on the same shared timeline as the
+          # watcher (candidate A) and the CRI-reported container start time
+          # (candidate B, read via `crictl inspect` from the kind node).
+          args:
+            - "-addr=:8080"
+            - "-run-epoch=__RUN_EPOCH__"
+          ports:
+            - containerPort: 8080
+          # The "victim always listens before Ready" invariant: Ready must
+          # only ever be reported once the TCP port is actually accepting
+          # connections. This is what lets a probe treat "connection
+          # refused" as unambiguous evidence that a NetworkPolicy blocked
+          # it, rather than the victim simply not having started its
+          # listener yet.
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 1
+            failureThreshold: 1

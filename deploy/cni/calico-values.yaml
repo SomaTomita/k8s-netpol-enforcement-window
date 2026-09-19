@@ -1,0 +1,61 @@
+# Minimal tigera-operator values for a single-node kind cluster created
+# with deploy/kind/calico.yaml. Verified against
+# `helm show values projectcalico/tigera-operator --version v3.32.2`
+# at the time of pinning — re-verify when bumping CALICO_VERSION.
+installation:
+  # Without this, the operator deploys itself but never creates the
+  # Installation custom resource, so no CNI actually gets installed on the
+  # node — pods would sit in ContainerCreating forever. Matches the chart
+  # default (`helm show values`), kept explicit as this repo's convention
+  # of spelling out every value it depends on.
+  enabled: true
+  # Valid options per the chart: EKS, GKE, AKS, RKE2, OpenShift,
+  # DockerEnterprise, TKG, Kind. Left at the chart default ("") so the
+  # operator auto-detects "Kind" from the node's kubeadm labels rather than
+  # this file hardcoding it — kind's node image/labels haven't needed an
+  # explicit override in testing.
+  kubernetesProvider: ""
+  # calicoNetwork (bgp/linuxDataplane/hostPorts/mtu/ipPools) is present in
+  # the chart but entirely commented out by default — there is no
+  # operator-side pool configured until this block exists.
+  calicoNetwork:
+    ipPools:
+      # Must match deploy/kind/calico.yaml's podSubnet exactly. If this
+      # cidr drifts from that file, the per-node PodCIDR kind allocates
+      # falls outside Calico's pool and pod IP allocation fails.
+      - cidr: 192.168.0.0/16
+        # Chart default is IPIP. Overridden to VXLAN here to match
+        # Cilium's own default overlay in this repo: Cilium's chart
+        # defaults `routingMode`/`tunnelProtocol` to `tunnel`/`vxlan`
+        # (confirmed via `helm show values cilium/cilium --version
+        # 1.20.0`, which annotates both with `@default: "tunnel"` /
+        # `@default: "vxlan"`), and deploy/cni/cilium-values.yaml does not
+        # override either. Keeping both CNIs on the same encapsulation
+        # technology avoids the tunnel protocol itself becoming a confound
+        # in the 3-way CNI comparison this project measures. "CrossSubnet"
+        # only encapsulates traffic that actually crosses a subnet
+        # boundary; on the single-node cluster this project uses (ADR
+        # 0002) there is no cross-node traffic to encapsulate, so this
+        # setting is inert for now but kept for parity with a possible
+        # future multi-node run.
+        encapsulation: VXLANCrossSubnet
+        # Lets pods reach outside the cluster (e.g. pulling images,
+        # DNS) via the node's IP. Without it, only in-pool traffic works;
+        # the smoke test's `docker build` + `kind load` sidesteps outbound
+        # pulls, but this is the chart's own recommended default for a
+        # pool meant to source real traffic.
+        natOutgoing: Enabled
+        # `all()` (the chart's own documented default value for this
+        # field) means every node in the cluster draws addresses from this
+        # pool. On a single-node cluster this is required — a narrower
+        # selector could leave the one node matching no pool at all, and
+        # then no pod could get an IP.
+        nodeSelector: all()
+  # The chart defaults controlPlaneReplicas to 2, which can never fully
+  # schedule on a single-node kind cluster (this project is single-node by
+  # design, see ADR 0002 / CLAUDE.md) — the same trap deploy/cni/cilium-values.yaml
+  # documents for operator.replicas. Confirmed against `helm show values
+  # projectcalico/tigera-operator --version v3.32.2`, which lists
+  # controlPlaneReplicas: 2 as the default ("Number of replicas for
+  # Typha/Control Plane").
+  controlPlaneReplicas: 1

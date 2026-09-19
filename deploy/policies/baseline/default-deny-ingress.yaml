@@ -1,0 +1,14 @@
+# __NS__ is substituted by scripts/trial.sh before apply — one fresh
+# namespace per trial. This policy is applied *before* the victim
+# Deployment: the research question is about a Pod starting up under a
+# policy that already exists, not about a policy arriving after the Pod is
+# already serving.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: __NS__
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

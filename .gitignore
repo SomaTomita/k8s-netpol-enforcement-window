@@ -1,0 +1,46 @@
+# Go
+/bin/
+*.test
+*.out
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# kind / kubeconfig
+kubeconfig-*
+*.kubeconfig
+
+# measurement data — raw is checked separately via checksums, not committed.
+# Directories must be un-ignored explicitly (git never descends into an
+# already-excluded directory to test file-level negations below), so this
+# supports checksums nested arbitrarily deep, e.g. data/raw/<run-id>/*.sha256.
+data/raw/**
+data/interim/**
+data/processed/**
+!data/raw/**/
+!data/interim/**/
+!data/processed/**/
+!data/**/.gitkeep
+!data/**/*.sha256
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# local agent tooling (not part of the research artifact)
+.claude/
+.agents/
+skills-lock.json
+
+# local-only: names the specific institution, not for public git history
+AI-USAGE.md
+
+# local-only: thesis-strategy / novelty-decision working notes, not project docs
+docs/novelty-recheck-notes.md

@@ -1,0 +1,35 @@
+# Minimal Cilium Helm values for a single-node kind cluster created with
+# deploy/kind/cilium.yaml (disableDefaultCNI: true, kubeProxyMode: none).
+#
+# k8sServiceHost / k8sServicePort are intentionally NOT set here: the
+# control-plane container's address is only known once the cluster exists,
+# so `task cluster:up` passes them as --set flags at install time
+# (see Taskfile.yml). Everything else needed for kind lives here.
+#
+# Reference: https://docs.cilium.io/en/stable/installation/kind/ and
+# https://docs.cilium.io/en/stable/network/kubernetes/kubeproxy-free/
+# (verified against `helm show values cilium/cilium` for chart 1.20.0).
+
+# kubeProxyMode: none in the kind config means there is no kube-proxy to
+# replace ClusterIP/NodePort routing, so Cilium must do it via eBPF.
+kubeProxyReplacement: true
+
+# kind's kubeadm config already allocates a per-node PodCIDR
+# (node.spec.podCIDR), so Cilium can consume that instead of running its
+# own IPAM.
+ipam:
+  mode: kubernetes
+
+# Avoid ImagePullBackOff retries against registry rate limits; kind's Docker
+# Desktop VM otherwise re-pulls on every container restart. Recommended by
+# the official Cilium kind quickstart.
+image:
+  pullPolicy: IfNotPresent
+
+# The chart defaults to 2 operator replicas with pod anti-affinity (and a
+# hostPort), which can never schedule on a single-node kind cluster (this
+# project is single-node by design, see ADR 0002 / CLAUDE.md). Confirmed
+# empirically: the second replica sits Pending ("didn't have free ports for
+# the requested pod ports") and `helm install --wait` times out.
+operator:
+  replicas: 1

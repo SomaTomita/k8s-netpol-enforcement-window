@@ -1,0 +1,191 @@
+version: '3'
+
+vars:
+  CNI: '{{.CNI | default "cilium"}}'
+  CLUSTER_NAME: 'npw-{{.CNI}}'
+  KIND_CONFIG: 'deploy/kind/{{.CNI}}.yaml'
+  CILIUM_VALUES: deploy/cni/cilium-values.yaml
+  CILIUM_VERSION: 1.20.0
+  CALICO_VALUES: deploy/cni/calico-values.yaml
+  CALICO_VERSION: v3.32.2
+  ANTREA_VALUES: deploy/cni/antrea-values.yaml
+  ANTREA_VERSION: 2.7.0
+  # The authoritative per-CNI version for whichever CNI is selected above
+  # -- CILIUM_VERSION/CALICO_VERSION/ANTREA_VERSION are what actually
+  # drive cni:install:* (see those tasks), so this is what exp1:run
+  # defaults CNI_VERSION to. A version typed by hand at the command line
+  # has nothing to catch a typo against and becomes the cni_version label
+  # on up to 90 trials; deriving the default from the same vars the
+  # install itself uses means the common case (no override) can't drift
+  # from what was actually installed. An explicit CNI_VERSION=... on the
+  # command line still overrides this (see exp1:run below).
+  CNI_VERSION_DEFAULT: '{{if eq .CNI "calico"}}{{.CALICO_VERSION}}{{else if eq .CNI "antrea"}}{{.ANTREA_VERSION}}{{else}}{{.CILIUM_VERSION}}{{end}}'
+
+tasks:
+  setup:
+    desc: Verify local dependencies are installed
+    cmds:
+      - go version
+      - kubectl version --client
+      - uv --version
+      - echo "setup ok"
+
+  cluster:up:
+    desc: 'Create the kind cluster for {{.CNI}} and install that CNI (CNI=cilium|calico|antrea)'
+    cmds:
+      - kind create cluster --config {{.KIND_CONFIG}}
+      - task: 'cni:install:{{.CNI}}'
+      - kubectl wait --for=condition=Ready node --all --timeout=180s
+
+  cni:install:cilium:
+    internal: true
+    cmds:
+      - helm repo add cilium https://helm.cilium.io/ --force-update
+      - |
+        API_SERVER_IP=$(kubectl get ep kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}')
+        API_SERVER_PORT=$(kubectl get ep kubernetes -o jsonpath='{.subsets[0].ports[0].port}')
+        helm install cilium cilium/cilium \
+          --version {{.CILIUM_VERSION}} \
+          --namespace kube-system \
+          -f {{.CILIUM_VALUES}} \
+          --set k8sServiceHost="${API_SERVER_IP}" \
+          --set k8sServicePort="${API_SERVER_PORT}" \
+          --wait
+
+  cni:install:calico:
+    internal: true
+    cmds:
+      - helm repo add projectcalico https://docs.tigera.io/calico/charts --force-update
+      # As of chart v3.32, CRDs are no longer bundled in tigera-operator and
+      # ship in a separate crd.projectcalico.org.v1 chart instead (see that
+      # chart's own README, pulled and read locally while pinning
+      # CALICO_VERSION): `helm install` for tigera-operator alone fails with
+      # "no matches for kind Installation/APIServer/..." because it tries to
+      # create those custom resources before their CRDs exist. server-side
+      # apply is required because some Calico CRDs exceed the client-side
+      # apply size limit. The crd.projectcalico.org.v1 chart is versioned
+      # in lockstep with tigera-operator (both publish v3.32.2, v3.32.1,
+      # ... in `helm search repo projectcalico`), so reusing
+      # {{.CALICO_VERSION}} for both is correct — check both charts still
+      # publish matching versions when bumping it.
+      - helm template calico-crds projectcalico/crd.projectcalico.org.v1 --version {{.CALICO_VERSION}} | kubectl apply --server-side -f -
+      - kubectl create namespace tigera-operator --dry-run=client -o yaml | kubectl apply -f -
+      - helm install calico projectcalico/tigera-operator --version {{.CALICO_VERSION}} --namespace tigera-operator -f {{.CALICO_VALUES}} --wait
+      # --wait returns when the operator is up, not when Calico is; wait for
+      # the dataplane. The operator only creates the tigerastatus/calico
+      # object after it starts reconciling, a few seconds after its own
+      # Deployment becomes ready, so `kubectl wait` on it can hit a
+      # NotFound race straight after `helm install --wait` returns — poll
+      # for its existence first, then wait on its condition. This poll is
+      # itself bounded (300s, via a wall-clock deadline computed with
+      # `date +%s` rather than `timeout`/`gtimeout`, neither of which is on
+      # PATH on a stock macOS shell): an install that never creates the
+      # object (operator crashlooping, aggregated API server never
+      # registering) must fail this task loudly, not hang it forever, since
+      # cluster:up/cluster:down run unattended across many experiment runs.
+      - |
+        deadline=$(($(date +%s) + 300))
+        until kubectl get tigerastatus/calico >/dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "cni:install:calico: tigerastatus/calico did not appear within 300s" >&2
+            exit 1
+          fi
+          sleep 2
+        done
+        kubectl wait --for=condition=Available tigerastatus/calico --timeout=300s
+
+  cni:install:antrea:
+    internal: true
+    cmds:
+      - helm repo add antrea https://charts.antrea.io --force-update
+      # Unlike Calico, this chart bundles its CRDs directly under its own
+      # crds/ directory (confirmed by pulling and inspecting the chart:
+      # `helm pull antrea/antrea --version {{.ANTREA_VERSION}} --untar`) —
+      # Helm installs a chart's crds/ directory automatically before its
+      # templates, so no separate CRD chart/install step is needed here.
+      - helm install antrea antrea/antrea --version {{.ANTREA_VERSION}} --namespace kube-system -f {{.ANTREA_VALUES}} --wait
+      # --wait already waits for the antrea-agent DaemonSet's pods to
+      # report Ready (Helm's own --wait covers DaemonSets, and this chart
+      # creates the DaemonSet directly rather than via a separate
+      # operator/CRD the way Calico's tigera-operator does). This rollout
+      # status check is a second, independent confirmation of the same
+      # dataplane signal rather than trusting Helm's readiness probe
+      # alone; --timeout bounds it so a broken install fails loudly
+      # instead of hanging cluster:up.
+      - kubectl -n kube-system rollout status ds/antrea-agent --timeout=300s
+
+  cluster:down:
+    desc: 'Tear down the kind cluster for {{.CNI}}'
+    cmds:
+      - kind delete cluster --name {{.CLUSTER_NAME}}
+
+  smoke:
+    desc: Bring up the cluster, deploy the victim, confirm it becomes Available, tear down
+    cmds:
+      - docker build -q -t netpol-window/victim:dev -f cmd/victim/Dockerfile .
+      - task: cluster:up
+      - kind load docker-image netpol-window/victim:dev --name {{.CLUSTER_NAME}}
+      # -run-epoch is substituted with 0 (cmd/victim treats 0 as "measure
+      # from process start"): this smoke check only confirms the victim
+      # comes up, not any timing, so there's no shared run epoch to anchor
+      # to. __NS__ is substituted with a fixed `target` rather than a
+      # per-trial namespace: nothing here is a measurement, so the
+      # cache-cold guarantee scripts/trial.sh's t-<run-id> namespace
+      # exists for does not apply. deploy/workloads/victim.yaml does not
+      # declare the namespace itself (see that file's own comment) —
+      # create it first.
+      - kubectl create namespace target --dry-run=client -o yaml | kubectl apply -f -
+      - sed -e 's/__RUN_EPOCH__/0/' -e 's/__NS__/target/' deploy/workloads/victim.yaml | kubectl apply -f -
+      - kubectl wait --for=condition=Available deploy/victim -n target --timeout=120s
+      - task: cluster:down
+
+  lint:
+    desc: Run Go and Python linters, and syntax-check the shell scripts
+    cmds:
+      - golangci-lint run ./...
+      - uv run ruff check .
+      # `bash -n` parses without executing. scripts/ holds the measurement
+      # orchestration, which no test suite ever runs (it needs a cluster),
+      # so a syntax error there would otherwise first be discovered by a
+      # trial failing mid-run. Not shellcheck: it is not a dependency this
+      # repo declares, and lint must not fail on a machine that lacks it.
+      # Looped rather than `bash -n scripts/*.sh`: `bash -n` reads only
+      # its first file argument and treats the rest as that script's
+      # positional parameters, so the glob form would silently check
+      # collect.sh alone and never trial.sh.
+      # `|| exit 1` because a bare loop exits with the *last* iteration's
+      # status: without it a syntax error in any file but the last one
+      # would be printed and then passed over.
+      - for f in scripts/*.sh; do bash -n "$f" || exit 1; done
+
+  fmt:
+    desc: Format Go and Python source
+    cmds:
+      - gofmt -l -w .
+      - uv run ruff format .
+
+  test:
+    desc: Run Go and Python test suites
+    cmds:
+      - go test ./... -race
+      - uv run pytest
+
+  data:collect:
+    desc: 'Run one full measurement pass end-to-end and write data/raw/dev/<run-id>/ (pass a duration in seconds, e.g. `task data:collect -- 90`)'
+    cmds:
+      - scripts/collect.sh {{.CLI_ARGS}}
+
+  exp1:run:
+    desc: 'Run all pending Experiment 1 trials for one CNI against a running cluster (task exp1:run CNI=calico, optionally CNI_VERSION=v3.x.y to override the version this Taskfile actually installed)'
+    vars:
+      CNI_VERSION: '{{.CNI_VERSION | default .CNI_VERSION_DEFAULT}}'
+    cmds:
+      - docker build -q -t netpol-window/prober:dev -f cmd/prober/Dockerfile .
+      - docker build -q -t netpol-window/victim:dev -f cmd/victim/Dockerfile .
+      - kind load docker-image netpol-window/prober:dev netpol-window/victim:dev --name {{.CLUSTER_NAME}}
+      - uv run python -m npw.runner --cni {{.CNI}} --cni-version {{.CNI_VERSION}} {{.CLI_ARGS}}
+
+  exp1:analyze:
+    desc: 'Evaluate data/raw/exp1 into data/processed/exp1 (reads raw, never writes to it)'
+    cmds:
+      - uv run python -m npw.analysis.report_cli data/raw/exp1 data/processed/exp1

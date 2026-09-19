@@ -1,0 +1,14 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: npw-calico
+networking:
+  disableDefaultCNI: true
+  # Calico's default IPPool is 192.168.0.0/16; kind's default podSubnet is
+  # 10.244.0.0/16. Aligning them here avoids overriding the pool in the
+  # operator Installation resource.
+  podSubnet: 192.168.0.0/16
+  # kube-proxy is kept (kind default, iptables mode). Unlike the Cilium
+  # cluster (kubeProxyMode: none), Calico's default dataplane does not
+  # replace kube-proxy.
+nodes:
+  - role: control-plane

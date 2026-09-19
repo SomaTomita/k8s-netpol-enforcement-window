@@ -1,0 +1,27 @@
+# Frozen experiment matrix for Experiment 1 (unprotected window).
+# Mirrors experiments/exp1-window/preregistration.md 1:1 — any change here
+# without a corresponding dated amendment there is a protocol violation,
+# not a config tweak.
+#
+# All three CNIs now have deploy manifests (deploy/kind/, deploy/cni/) and
+# are runnable: `task cluster:up CNI=<cilium|calico|antrea>` brings up that
+# CNI's own single-node kind cluster, one cluster per CNI. The pinned
+# versions and chart values are frozen in preregistration.md's Addendum 1
+# (section A1), which closes the "Known gaps" entry that previously
+# recorded them as missing. Expanding this matrix with
+# `src/npw/matrix.py`'s `expand()` produces Runs for all three.
+
+cni:
+  - cilium   # 1.20.0, deploy/kind/cilium.yaml + deploy/cni/cilium-values.yaml — implemented
+  - calico   # v3.32.2, deploy/kind/calico.yaml + deploy/cni/calico-values.yaml — implemented
+  - antrea   # 2.7.0, deploy/kind/antrea.yaml + deploy/cni/antrea-values.yaml — implemented
+
+churn_rate_per_min:
+  - 1   # effectively no churn — matches every pilot run to date (single victim Pod)
+  - 10
+  - 60
+
+policy_set:
+  - default-deny-ingress   # deploy/policies/baseline/default-deny-ingress.yaml
+
+repetitions: 30

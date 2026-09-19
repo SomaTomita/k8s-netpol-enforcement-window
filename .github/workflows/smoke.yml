@@ -1,0 +1,46 @@
+name: smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: kind + ${{ matrix.cni }} smoke test
+    runs-on: ubuntu-latest
+    # Calico's install task polls for tigerastatus/calico with its own
+    # bounded 300s deadline, on top of its helm install --wait and a
+    # further 300s kubectl wait — the slowest of the three CNIs. 30m gives
+    # that headroom plus image build, cluster create/delete and the
+    # victim rollout, while still failing loudly on a genuinely stuck job.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cni: [cilium, calico, antrea]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Task
+        uses: arduino/setup-task@v3.0.0
+        with:
+          version: 3.x
+
+      # install_only skips cluster creation here — task cluster:up creates
+      # the cluster itself with the repo's own per-CNI kind config.
+      - name: Install kind
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      # Drives the same Taskfile used locally, so CI cannot drift from
+      # `task smoke CNI=<cni>`: builds the victim image, brings up the
+      # kind cluster, installs the CNI via Helm, deploys the victim, waits
+      # for it to become Available, then tears the cluster down.
+      - name: Smoke
+        run: task smoke CNI=${{ matrix.cni }}
