@@ -20,6 +20,11 @@
 # npw.analysis.report_cli's data/raw/exp1 scan.
 #
 # Required env: CNI, RUN_ID, RUN_DIR, DURATION (seconds), DELAY_MS.
+#
+# Since Experiment 1b, `POLICY_AT=at-ready POLICY_DELAY_MS=<ms> scripts/trial.sh`
+# performs the same measurement and also records the apply timestamps.
+# This script is kept unchanged as the exact instrument the Addendum 3
+# positive-control data was collected with.
 set -euo pipefail
 
 : "${CNI:?CNI is required}"

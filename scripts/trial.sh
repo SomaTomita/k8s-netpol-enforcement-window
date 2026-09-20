@@ -5,8 +5,10 @@
 # experiment matrix); this script owns one trial and nothing else.
 #
 # Required env: CNI, RUN_ID, RUN_DIR, DURATION (seconds).
-# Optional env: KUBECONFIG, and any churn driver the caller already has
-#   running against this trial's namespace.
+# Optional env: POLICY_AT (before|with-victim|at-ready; default before),
+#   POLICY_DELAY_MS (non-negative integer; only with at-ready; default 0),
+#   KUBECONFIG, and any churn driver the caller already has running
+#   against this trial's namespace.
 #
 # Writes prober.jsonl, victim.jsonl, cri.jsonl, watcher.jsonl,
 # watcher.log, trial.json and checksums.sha256 into $RUN_DIR. It never
@@ -17,11 +19,25 @@
 # Two properties of this ordering are the scientific content of this
 # script, not incidental plumbing:
 #
-#   Policy first. The NetworkPolicy is applied before the victim
-#   Deployment exists. The research question is about a Pod starting up
-#   under a policy that is already present; applying the policy to an
-#   already-serving Pod measures a different phenomenon (that is the
-#   teardown/late-policy case, closer to CVE-2024-7598's shape).
+#   Policy timing is the independent variable. POLICY_AT selects when the
+#   one default-deny NetworkPolicy is applied relative to the victim:
+#     before      - before the victim Deployment exists. Experiment 1's
+#                   ordering, and the default: a Pod starting up under a
+#                   policy that is already present.
+#     with-victim - immediately after the victim Deployment's apply
+#                   returns, in this same shell. The Kubernetes docs'
+#                   "created before the network plugin has completed
+#                   NetworkPolicy handling" case, in its mildest form.
+#     at-ready    - the instant the victim's candidate-C self-report is
+#                   seen (polled via kubectl logs), plus POLICY_DELAY_MS.
+#                   Isolates the CNI's enforcement latency from Pod
+#                   startup; POLICY_DELAY_MS=2000 reproduces the
+#                   positive control.
+#   Whichever arm runs, the instant the apply was issued and the instant
+#   it returned are recorded in trial.json (policy_apply_issued_ns /
+#   policy_apply_returned_ns) so the analysis can compute
+#   enforcement latency = t_blocked - policy_apply_issued_ns, and the
+#   head start the CNI actually had, rather than assuming either.
 #
 #   A fresh, and genuinely cold, namespace per trial. Repeating trials in
 #   one namespace with an identical Pod label set lets the CNI reuse
@@ -90,6 +106,27 @@ case "${DURATION}" in
 esac
 if [ "${DURATION}" -lt 1 ]; then
   echo "DURATION must be a positive integer number of seconds; got: ${DURATION}" >&2
+  exit 2
+fi
+
+# Same three strings as src/npw/matrix.py's POLICY_AT_VALUES.
+POLICY_AT="${POLICY_AT:-before}"
+POLICY_DELAY_MS="${POLICY_DELAY_MS:-0}"
+case "${POLICY_AT}" in
+  before | with-victim | at-ready) ;;
+  *)
+    echo "POLICY_AT must be one of before|with-victim|at-ready; got: ${POLICY_AT}" >&2
+    exit 2
+    ;;
+esac
+case "${POLICY_DELAY_MS}" in
+  '' | *[!0-9]*)
+    echo "POLICY_DELAY_MS must be a non-negative integer number of milliseconds; got: ${POLICY_DELAY_MS}" >&2
+    exit 2
+    ;;
+esac
+if [ "${POLICY_AT}" != "at-ready" ] && [ "${POLICY_DELAY_MS}" -ne 0 ]; then
+  echo "POLICY_DELAY_MS is only meaningful with POLICY_AT=at-ready; got POLICY_AT=${POLICY_AT} POLICY_DELAY_MS=${POLICY_DELAY_MS}" >&2
   exit 2
 fi
 
@@ -206,6 +243,24 @@ now_offset_ms() {
   python3 -c "import time; print((time.time_ns() - ${RUN_EPOCH}) / 1e6)"
 }
 
+now_offset_ns() {
+  python3 -c "import time; print(time.time_ns() - ${RUN_EPOCH})"
+}
+
+# The one policy apply of the trial, wherever POLICY_AT places it. The
+# timestamp is taken *before* kubectl is invoked: enforcement latency is
+# measured from the moment an operator asked for the policy, so the API
+# round-trip is inside it, not silently subtracted. The returned
+# timestamp is recorded too so the two can be separated afterwards.
+POLICY_APPLY_ISSUED_NS=""
+POLICY_APPLY_RETURNED_NS=""
+apply_policy() {
+  POLICY_APPLY_ISSUED_NS="$(now_offset_ns)"
+  echo "==> applying default-deny policy (policy_at=${POLICY_AT}, offset $(( POLICY_APPLY_ISSUED_NS / 1000000 ))ms)"
+  render deploy/policies/baseline/default-deny-ingress.yaml | kubectl apply -f - >/dev/null
+  POLICY_APPLY_RETURNED_NS="$(now_offset_ns)"
+}
+
 warn() {
   echo "warning: $1" >&2
   WARNINGS+=("$1")
@@ -214,12 +269,13 @@ warn() {
 echo "==> creating trial namespace ${NS}"
 kubectl create namespace "${NS}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-# Policy before workload — see the header. By the time the victim's Pod is
-# created below, this policy has already been accepted by the apiserver
-# and the CNI has had the whole prober startup and watcher warm-up to
-# react to it.
-echo "==> applying default-deny policy (offset $(now_offset_ms)ms)"
-render deploy/policies/baseline/default-deny-ingress.yaml | kubectl apply -f - >/dev/null
+# POLICY_AT=before: policy before workload. By the time the victim's Pod
+# is created below, this policy has already been accepted by the
+# apiserver and the CNI has had the whole prober startup and watcher
+# warm-up to react to it.
+if [ "${POLICY_AT}" = "before" ]; then
+  apply_policy
+fi
 
 echo "==> deploying in-cluster prober (offset $(now_offset_ms)ms)"
 render deploy/workloads/prober.yaml | kubectl apply -f - >/dev/null
@@ -245,6 +301,50 @@ sleep 1 # let the watch open before the victim exists
 
 echo "==> deploying victim workload (offset $(now_offset_ms)ms)"
 render deploy/workloads/victim.yaml | kubectl apply -f - >/dev/null
+
+# POLICY_AT=with-victim: the policy races the Pod. Nothing sits between
+# the two applies but this shell's own return from kubectl.
+if [ "${POLICY_AT}" = "with-victim" ]; then
+  apply_policy
+fi
+
+# POLICY_AT=at-ready: wait for the victim's own candidate-C report, then
+# POLICY_DELAY_MS, then apply. Polled rather than timed from the victim
+# apply returning, because scheduling and sandbox creation cost a
+# variable 1-2s and the delay must be measured from actual readiness.
+# `kubectl logs` fails until the Pod exists, hence `|| true`.
+if [ "${POLICY_AT}" = "at-ready" ]; then
+  echo "==> polling for candidate C before applying the policy"
+  C_SEEN_NS=""
+  POLL_DEADLINE=$(( $(date +%s) + 60 ))
+  while [ -z "${C_SEEN_NS}" ]; do
+    if [ "$(date +%s)" -ge "${POLL_DEADLINE}" ]; then
+      echo "victim did not report candidate C within 60s; cannot time the policy from t_ready" >&2
+      exit 1
+    fi
+    RAW="$(kubectl logs -n "${NS}" deploy/victim 2>/dev/null || true)"
+    if [ -n "${RAW}" ]; then
+      C_SEEN_NS="$(python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        r = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if r.get("t_ready_method") == "C":
+        print(r["offset_ns"])
+        break
+' <<<"${RAW}")"
+    fi
+    [ -z "${C_SEEN_NS}" ] && sleep 0.1
+  done
+  echo "==> candidate C seen at offset_ns=${C_SEEN_NS} (now $(now_offset_ms)ms); sleeping ${POLICY_DELAY_MS}ms"
+  python3 -c "import time; time.sleep(${POLICY_DELAY_MS} / 1000)"
+  apply_policy
+fi
 
 kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/${POD}" -n prober --timeout="$((DURATION + 90))s" >/dev/null
 kubectl logs "pod/${POD}" -n prober >"${RUN_DIR}/prober.jsonl"
@@ -331,18 +431,23 @@ if [ ! -s "${RUN_DIR}/watcher.jsonl" ]; then
   warn "watcher recorded no Pod-Ready event; candidate A is missing for this trial"
 fi
 
+if [ "${POLICY_AT}" = "at-ready" ] && [ "${POLICY_APPLY_ISSUED_NS}" -le "${C_OFFSET_NS}" ]; then
+  warn "at-ready arm issued the policy at ${POLICY_APPLY_ISSUED_NS}ns, not after candidate C at ${C_OFFSET_NS}ns; the poll saw a different C than the one recorded"
+fi
+
 # trial.json is the per-trial provenance record: the shared epoch every
-# offset_ns hangs off, where the trial ran, and the cross-checks that a
-# reader would otherwise have to recompute to know whether to trust the
-# numbers beside it.
+# offset_ns hangs off, where the trial ran, when the policy was applied
+# and under which arm, and the cross-checks that a reader would otherwise
+# have to recompute to know whether to trust the numbers beside it.
 python3 - \
   "${RUN_EPOCH}" "${NS}" "${NODE_NAME}" "${RESTARTS}" \
   "${B_OFFSET_NS}" "${C_OFFSET_NS}" "${SKEW_NS}" \
+  "${POLICY_AT}" "${POLICY_DELAY_MS}" "${POLICY_APPLY_ISSUED_NS}" "${POLICY_APPLY_RETURNED_NS}" \
   ${WARNINGS[@]+"${WARNINGS[@]}"} >"${RUN_DIR}/trial.json" <<'PY'
 import json
 import sys
 
-epoch, ns, node, restarts, b, c, skew = sys.argv[1:8]
+epoch, ns, node, restarts, b, c, skew, policy_at, delay_ms, issued, returned = sys.argv[1:12]
 print(
     json.dumps(
         {
@@ -353,7 +458,11 @@ print(
             "t_ready_b_ns": int(b),
             "t_ready_c_ns": int(c),
             "b_c_skew_ns": int(skew),
-            "warnings": sys.argv[8:],
+            "policy_at": policy_at,
+            "policy_delay_ms": int(delay_ms),
+            "policy_apply_issued_ns": int(issued),
+            "policy_apply_returned_ns": int(returned),
+            "warnings": sys.argv[12:],
         }
     )
 )
