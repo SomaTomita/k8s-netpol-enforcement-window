@@ -189,3 +189,25 @@ tasks:
     desc: 'Evaluate data/raw/exp1 into data/processed/exp1 (reads raw, never writes to it)'
     cmds:
       - uv run python -m npw.analysis.report_cli data/raw/exp1 data/processed/exp1
+
+  exp1b:run:
+    desc: 'Run all pending Experiment 1b trials (policy-timing arms) for one CNI against a running cluster (task exp1b:run CNI=calico; pass MATRIX=experiments/exp1b-ordering/pilot-matrix.yaml RAW_ROOT=data/raw/exp1b-pilot for the pilot)'
+    vars:
+      CNI_VERSION: '{{.CNI_VERSION | default .CNI_VERSION_DEFAULT}}'
+      MATRIX: '{{.MATRIX | default "experiments/exp1b-ordering/matrix.yaml"}}'
+      RAW_ROOT: '{{.RAW_ROOT | default "data/raw/exp1b"}}'
+    cmds:
+      - docker build -q -t netpol-window/prober:dev -f cmd/prober/Dockerfile .
+      - docker build -q -t netpol-window/victim:dev -f cmd/victim/Dockerfile .
+      - kind load docker-image netpol-window/prober:dev netpol-window/victim:dev --name {{.CLUSTER_NAME}}
+      - uv run python -m npw.runner --matrix {{.MATRIX}} --raw-root {{.RAW_ROOT}} --cni {{.CNI}} --cni-version {{.CNI_VERSION}} {{.CLI_ARGS}}
+
+  exp1b:analyze:
+    desc: 'Evaluate data/raw/exp1b into data/processed/exp1b (reads raw, never writes to it)'
+    cmds:
+      - uv run python -m npw.analysis.report_cli data/raw/exp1b data/processed/exp1b
+
+  gaps:
+    desc: 'Scan a raw root for inter-observation gaps that mean the host slept (task gaps -- data/raw/exp1b)'
+    cmds:
+      - uv run python -m npw.gaps {{.CLI_ARGS}}
