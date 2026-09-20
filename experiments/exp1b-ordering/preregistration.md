@@ -58,26 +58,32 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
 
 - **H1** (`at-ready`): every trial is uncensored — an Allowed → Blocked
   transition after `t_ready` is witnessed — and each CNI's median `L`
-  lies in [100, 1000] ms. Prior: the repo's only *direct* figure is
-  Cilium's 127.8 ms from `kubectl apply` returning to the
-  sustained-Blocked run's start, stated in Experiment 1's
-  preregistration Addendum 3 rather than recomputable from committed
-  data (the positive-control `trial.json` files record no
-  `policy_apply_issued_ns`, so `L` itself cannot be computed from them).
-  The Addendum 3 positive control (`data/raw/positive-control/`, n = 1
-  per CNI) recovered a window 224.4–307.0 ms in excess of the imposed
-  2000 ms delay; that excess is an *upper bound* on `L`, not `L` itself,
-  since it also contains the `time.sleep` wake-up and the `kubectl
-  apply` round trip. The band is calibrated against the direct Cilium
-  figure (127.8 ms), with the three-CNI excess (224.4–307.0 ms, an upper
-  bound) as corroborating order of magnitude; it is deliberately wide
-  and is a sanity bound, not a point prediction. The lower bound sits
-  close to the harness's own resolution: per Experiment 1's Addendum 1
-  B1, a blocked dial on a dropping CNI consumes the full 200 ms timeout,
-  so confirming `k = 3` consecutive `Blocked` observations costs up to
-  `(k − 1) × 200 ms = 400 ms` after the true transition; a witnessed `L`
-  near 100 ms should be read as at-or-below what this instrument
-  resolves, not as a precise measurement.
+  lies in [100, 1000] ms. Prior: `L` is bracketed between two sourced
+  figures, neither of which is `L` itself. `policy_apply_issued_ns` is
+  captured *before* `kubectl apply` runs (`scripts/trial.sh`), so `L`
+  includes the API round trip by definition. **Lower bound, 127.8 ms
+  (Cilium):** Experiment 1's preregistration Addendum 3 states this
+  figure "from `kubectl apply` returning to the sustained-Blocked run's
+  start" — measured from the apply *returning*, so it omits the round
+  trip `L` includes, making it a lower bound on `L`, not a measurement of
+  it. The one trial with both timestamps records that round trip
+  directly: `data/raw/dev/smoke-with-victim/trial.json`,
+  `policy_apply_returned_ns − policy_apply_issued_ns` = 77.7 ms — cited
+  here as the one observed magnitude of that gap, not as a correction to
+  apply to the 127.8 ms figure. **Upper bound, 224.4–307.0 ms (all three
+  CNIs):** the Addendum 3 positive control (`data/raw/positive-control/`,
+  n = 1 per CNI) recovered a window 224.4–307.0 ms in excess of the
+  imposed 2000 ms delay; that excess additionally contains the
+  `time.sleep` wake-up that `L` excludes, making it an upper bound. The
+  `[100, 1000] ms` band is chosen to contain this bracket with margin on
+  both sides, not a point estimate between the two bounds; it is
+  deliberately wide and is a sanity bound, not a point prediction. Per
+  Experiment 1's Addendum 1 B1, the 200 ms dial timeout does not blur
+  `t_blocked` itself — the transition instant is still located to within
+  about `p` — but on a dropping CNI it does cost wall-clock time to
+  *confirm* the `k = 3` run, up to `(k − 1) × 200 ms = 400 ms` after the
+  true transition, which the 30 s trial duration must have budget to
+  carry.
 - **H2** (`with-victim`): ≥ 20 of 30 trials per CNI are left-censored.
   Reasoning: in this arm the policy is applied immediately after the
   victim Deployment's apply returns, so the CNI's head start is not the
@@ -137,7 +143,12 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
    trial whose `prober.jsonl` has an inter-observation gap > 5000 ms
    (`uv run python -m npw.gaps`) was suspended mid-measurement; it is
    moved to `data/raw/exp1b-failed/<run_id>/` with a `REASON.md` and
-   re-collected. The count and the run ids are reported.
+   re-collected. As for Experiment 1's own discards (`docs/results/exp1.md`),
+   the discarded trial's `checksums.sha256` is committed so a reader can
+   verify the discarded stream is the one described; the `REASON.md` and
+   the streams themselves stay local, per `.gitignore`, as all of
+   `data/raw/` does. The count, the run ids, and the reasons are
+   reproduced in the results document.
 
 ## Pilot
 
@@ -153,10 +164,10 @@ This `window` band is a functional check — that the harness produces an
 uncensored measurement in this arm at all — not a test of H1. `L` is
 smaller than `window` in this arm, because `head_start` is negative here
 (`L − window = head_start`); a pilot trial passing at the low end of
-[50, 2000] ms could therefore still have an `L` at or below what the
-instrument resolves (H1's own resolution note), and would not by itself
-confirm H1's band. H1's `L` distribution is judged separately, over the
-full run's 30 trials per CNI, not by this pilot.
+[50, 2000] ms could therefore still have an `L` below H1's [100, 1000] ms
+band, and would not by itself confirm H1's band. H1's `L` distribution is
+judged separately, over the full run's 30 trials per CNI, not by this
+pilot.
 
 ## Amendment policy
 

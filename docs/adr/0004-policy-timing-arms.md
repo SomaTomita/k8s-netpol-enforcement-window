@@ -11,8 +11,10 @@ policy created ~2.4 s before readiness. The Kubernetes documentation's
 hazard needs the network plugin's policy handling to still be incomplete
 when the Pod starts. There are two ways to reach that regime:
 
-1. Lengthen the plugin's handling time — more nodes, more policies, more
-   endpoints. Real clusters can see dataplane programming lag by minutes:
+1. Lengthen the plugin's handling time — this project's own hypothesis is
+   that more nodes, more policies, and more endpoints would do this in a
+   real cluster (not itself established by the citation below). Real
+   clusters can see dataplane programming lag by minutes:
    projectcalico/calico #9706 is a single, unresolved user report (closed
    for inactivity; `kind/support`; Calico 3.27.4) of pods starting with no
    *outbound* connectivity for up to two minutes — with no NetworkPolicies
