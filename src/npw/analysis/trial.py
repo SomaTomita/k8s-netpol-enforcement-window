@@ -78,6 +78,8 @@ class Trial:
     observations: list[dict[str, Any]]
     t_ready_c_ns: int
     t_ready_b_ns: int
+    policy_at: str
+    policy_apply_issued_ns: int | None
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,27 @@ class TrialResult:
     excluded_reason: str | None
     probe_interval_ns: int
 
+    # Experiment 1b (experiments/exp1b-ordering/preregistration.md).
+    # `policy_at` is the arm; `policy_apply_issued_ns` the instant
+    # scripts/trial.sh issued the one policy apply. Both are absent from
+    # Experiment 1's trials and default accordingly.
+    #
+    # `enforcement_latency_ns` is `t_blocked - policy_apply_issued_ns`:
+    # how long the CNI took from being asked to enforce to actually
+    # enforcing. It shares `t_blocked` with `window_ns`, so it shares the
+    # same censoring: on a left-censored trial it is a floor, not a
+    # latency, and `npw.analysis.latency` refuses to average it there.
+    # `None` when right-censored or when no apply time was recorded.
+    #
+    # `head_start_ns` is `t_ready_c_ns - policy_apply_issued_ns`: how long
+    # the CNI had before the Pod was ready. Positive in `before` and
+    # `with-victim`, negative in `at-ready`. Recorded so the ordering is a
+    # measured fact per trial rather than a label.
+    policy_at: str = "before"
+    policy_apply_issued_ns: int | None = None
+    enforcement_latency_ns: int | None = None
+    head_start_ns: int | None = None
+
 
 def _jsonl(path: Path) -> list[dict[str, Any]]:
     """Parse a JSONL file, skipping blank lines.
@@ -196,6 +219,12 @@ def load_trial(run_dir: Path) -> Trial:
     otherwise corrupt meta.json.
     """
     meta = json.loads((run_dir / "meta.json").read_text())
+    # trial.json is written by scripts/trial.sh and is absent from the
+    # synthetic fixtures older tests build; both it and its policy fields
+    # are optional here so an Experiment 1 directory loads unchanged.
+    trial_json_path = run_dir / "trial.json"
+    trial_json = json.loads(trial_json_path.read_text()) if trial_json_path.exists() else {}
+    issued = trial_json.get("policy_apply_issued_ns")
     c = _one_t_ready_record(run_dir / "victim.jsonl", "C")
     b = _one_t_ready_record(run_dir / "cri.jsonl", "B")
     observations = _jsonl(run_dir / "prober.jsonl")
@@ -215,6 +244,8 @@ def load_trial(run_dir: Path) -> Trial:
         observations=observations,
         t_ready_c_ns=int(c["offset_ns"]),
         t_ready_b_ns=int(b["offset_ns"]),
+        policy_at=str(meta.get("policy_at", "before")),
+        policy_apply_issued_ns=int(issued) if issued is not None else None,
     )
 
 
@@ -282,6 +313,15 @@ def evaluate(t: Trial) -> TrialResult:
         for o in post_ready
     )
 
+    if t.policy_apply_issued_ns is None:
+        enforcement_latency_ns = None
+        head_start_ns = None
+    else:
+        enforcement_latency_ns = (
+            t_blocked - t.policy_apply_issued_ns if t_blocked is not None else None
+        )
+        head_start_ns = t.t_ready_c_ns - t.policy_apply_issued_ns
+
     return TrialResult(
         run_id=t.run_id,
         cni=t.cni,
@@ -296,4 +336,8 @@ def evaluate(t: Trial) -> TrialResult:
         b_c_flagged=b_c_flagged,
         excluded_reason=excluded_reason,
         probe_interval_ns=t.probe_interval_ns,
+        policy_at=t.policy_at,
+        policy_apply_issued_ns=t.policy_apply_issued_ns,
+        enforcement_latency_ns=enforcement_latency_ns,
+        head_start_ns=head_start_ns,
     )
