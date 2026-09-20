@@ -139,6 +139,15 @@ def test_main_fails_on_wrong_argument_count(capsys):
     assert "usage" in capsys.readouterr().err.lower()
 
 
+def test_main_writes_latency_csv_and_appends_it_to_the_markdown(tmp_path):
+    raw = tmp_path / "raw"
+    out = tmp_path / "processed"
+    _trial_dir(raw, "run-0000-000", "cilium", 1, _allowed_then_blocked(), policy_at="at-ready")
+    assert main([str(raw), str(out)]) == 0
+    assert (out / "latency.csv").exists()
+    assert "## Enforcement latency" in (out / "summary.md").read_text()
+
+
 def test_main_groups_pairwise_by_churn_and_policy_at(tmp_path):
     raw = tmp_path / "raw"
     out = tmp_path / "processed"

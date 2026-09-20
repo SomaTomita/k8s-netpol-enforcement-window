@@ -3,13 +3,15 @@
     uv run python -m npw.analysis.report_cli data/raw/exp1 data/processed/exp1
 
 Reads every complete trial directory under the raw root, evaluates each
-one (`npw.analysis.trial`), and writes four derived files to the output
+one (`npw.analysis.trial`), and writes derived files to the output
 directory:
 
-- `trials.csv`   -- one row per evaluated trial, the full `TrialResult`
-- `summary.csv`  -- one row per (CNI, churn) condition
-- `pairwise.csv` -- Mann-Whitney U + Holm per churn level
-- `summary.md`   -- the same two tables, rendered for the write-up
+- `trials.csv`           -- one row per evaluated trial, the full `TrialResult`
+- `summary.csv`          -- one row per (CNI, churn) condition
+- `pairwise.csv`         -- Mann-Whitney U + Holm per churn level
+- `latency.csv`          -- one row per (CNI, policy timing) enforcement-latency cell
+- `latency_pairwise.csv` -- Mann-Whitney U + Holm per policy timing, enforcement latency
+- `summary.md`           -- all of the above tables, rendered for the write-up
 
 This module is the only part of the analysis stage that touches the
 filesystem; all statistics live in `npw.analysis.report` and are
@@ -25,6 +27,13 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from npw.analysis.latency import (
+    LATENCY_FIELDS,
+    LATENCY_PAIRWISE_FIELDS,
+    pairwise_latency,
+    render_latency_markdown,
+    summarize_latency,
+)
 from npw.analysis.report import (
     PAIRWISE_FIELDS,
     SUMMARY_FIELDS,
@@ -106,6 +115,11 @@ def main(argv: list[str]) -> int:
     summary_rows = summarize(results)
     conditions = sorted({(row["churn_rate_per_min"], row["policy_at"]) for row in summary_rows})
     pairwise_rows = [pairwise_cni(results, churn, policy_at) for churn, policy_at in conditions]
+    latency_rows = summarize_latency(results)
+    latency_pairwise = [
+        pairwise_latency(results, policy_at)
+        for policy_at in sorted({row["policy_at"] for row in latency_rows})
+    ]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(
@@ -117,8 +131,16 @@ def main(argv: list[str]) -> int:
     _write_csv(
         out_dir / "pairwise.csv", PAIRWISE_FIELDS, (p for level in pairwise_rows for p in level)
     )
+    _write_csv(out_dir / "latency.csv", LATENCY_FIELDS, latency_rows)
+    _write_csv(
+        out_dir / "latency_pairwise.csv",
+        LATENCY_PAIRWISE_FIELDS,
+        (p for level in latency_pairwise for p in level),
+    )
 
-    markdown = render_markdown(summary_rows, pairwise_rows)
+    markdown = render_markdown(summary_rows, pairwise_rows) + "\n" + render_latency_markdown(
+        latency_rows, latency_pairwise
+    )
     (out_dir / "summary.md").write_text(markdown)
     print(markdown, end="")
     return 0
