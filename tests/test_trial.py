@@ -18,6 +18,7 @@ def _write(
     probe_interval_ns=DEFAULT_PROBE_INTERVAL_NS,
     policy_at=None,
     policy_apply_issued_ns=None,
+    trial_json=None,
 ):
     dir.mkdir()
     (dir / "prober.jsonl").write_text("".join(json.dumps(o) + "\n" for o in prober))
@@ -34,7 +35,11 @@ def _write(
     if policy_at is not None:
         meta["policy_at"] = policy_at
     (dir / "meta.json").write_text(json.dumps(meta))
-    if policy_apply_issued_ns is not None:
+    if trial_json is not None:
+        # An explicit trial.json, for the cases where its exact shape is
+        # the thing under test rather than a carrier for the apply time.
+        (dir / "trial.json").write_text(json.dumps(trial_json))
+    elif policy_apply_issued_ns is not None:
         (dir / "trial.json").write_text(
             json.dumps({"run_epoch_ns": 0, "policy_apply_issued_ns": policy_apply_issued_ns})
         )
@@ -417,3 +422,60 @@ def test_left_censored_trial_still_reports_latency_as_a_value(tmp_path):
     assert r.censored is True
     assert r.enforcement_latency_ns == 500
     assert r.head_start_ns == 400
+
+
+def test_policy_at_disagreeing_between_meta_and_trial_json_raises(tmp_path):
+    """meta.json holds the runner's intent, trial.json what trial.sh ran.
+
+    ADR 0004 rests on the ordering being measured rather than assumed, so
+    a disagreement is an error naming both values, not a silent
+    preference for one of the two.
+    """
+    d = tmp_path / "run-0001-002"
+    _write(
+        d,
+        [_o(600, "Allowed"), _o(3000, "Blocked"), _o(4000, "Blocked"), _o(5000, "Blocked")],
+        c_ns=500,
+        b_ns=400,
+        policy_at="at-ready",
+        trial_json={
+            "run_epoch_ns": 0,
+            "policy_at": "with-victim",
+            "policy_apply_issued_ns": 700,
+        },
+    )
+    with pytest.raises(ValueError) as excinfo:
+        load_trial(d)
+    msg = str(excinfo.value)
+    assert str(d / "trial.json") in msg
+    assert "'with-victim'" in msg and "'at-ready'" in msg
+
+
+def test_exp1_trial_json_without_policy_keys_still_loads(tmp_path):
+    """Experiment 1's 270 trials have a trial.json that predates the
+    policy fields: the file is present, but carries neither `policy_at`
+    nor `policy_apply_issued_ns`. That shape must keep loading as the
+    `before` arm -- the cross-check above fires on disagreement only, not
+    on absence.
+    """
+    d = tmp_path / "run-0000-002"
+    _write(
+        d,
+        [_o(1000, "Blocked"), _o(2000, "Blocked"), _o(3000, "Blocked")],
+        c_ns=500,
+        b_ns=400,
+        trial_json={
+            "run_epoch_ns": 1_789_858_399_649_745_000,
+            "namespace": "t-run-0000-002",
+            "node": "npw-cilium-control-plane",
+            "victim_restart_count": 0,
+            "t_ready_b_ns": 400,
+            "t_ready_c_ns": 500,
+            "b_c_skew_ns": -100,
+            "warnings": [],
+        },
+    )
+    r = evaluate(load_trial(d))
+    assert r.policy_at == "before"
+    assert r.policy_apply_issued_ns is None
+    assert r.enforcement_latency_ns is None

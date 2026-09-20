@@ -102,6 +102,7 @@ def test_trial_env_is_explicit():
         "RUN_DIR": "data/raw/exp1/run-0001-003",
         "DURATION": "30",
         "POLICY_AT": "at-ready",
+        "POLICY_DELAY_MS": "0",
     }
 
 

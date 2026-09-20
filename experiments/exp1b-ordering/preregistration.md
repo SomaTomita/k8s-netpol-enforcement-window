@@ -46,8 +46,11 @@ repetitions = 180 trials, raw root `data/raw/exp1b`.
 
 ## Recorded quantities (per trial, `trial.json`)
 
-- `policy_apply_issued_ns` — instant before `kubectl apply` is invoked.
-- `policy_apply_returned_ns` — instant it returned.
+- `policy_apply_issued_ns` — offset from the run epoch to the instant
+  before `kubectl apply` is invoked, like its sibling `t_ready_c_ns`; not
+  a wall-clock timestamp.
+- `policy_apply_returned_ns` — the same offset for the instant it
+  returned.
 - `t_ready_c_ns`, `t_ready_b_ns` — as in Experiment 1.
 
 Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
@@ -73,8 +76,9 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
   apply to the 127.8 ms figure. **Upper bound, 224.4–307.0 ms (all three
   CNIs):** the Addendum 3 positive control (`data/raw/positive-control/`,
   n = 1 per CNI) recovered a window 224.4–307.0 ms in excess of the
-  imposed 2000 ms delay; that excess additionally contains the
-  `time.sleep` wake-up that `L` excludes, making it an upper bound. The
+  imposed 2000 ms delay; that excess additionally contains the 100 ms
+  `kubectl logs` poll's lag in detecting candidate C and the `time.sleep`
+  wake-up, neither of which is inside `L`, making it an upper bound. The
   `[100, 1000] ms` band is chosen to contain this bracket with margin on
   both sides, not a point estimate between the two bounds; it is
   deliberately wide and is a sanity bound, not a point prediction. Per
@@ -88,9 +92,12 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
   Reasoning: in this arm the policy is applied immediately after the
   victim Deployment's apply returns, so the CNI's head start is not the
   full run-epoch-to-candidate-C interval Experiment 1 measured for the
-  `before` arm — it is only what remains of it once the apply round-trip
-  has elapsed. A single pre-freeze instrument-check trial run while
-  building this harness, on Cilium only (`data/raw/dev/smoke-with-victim/`;
+  `before` arm — it is what remains of that interval once the harness's
+  whole setup pipeline up to the victim's own apply returning has elapsed
+  (2118.8 ms of the 2636.2 ms to candidate C in the trial cited next,
+  leaving 517.3 ms), not merely once the ~78 ms apply round trip has.
+  A single pre-freeze instrument-check trial run while building this
+  harness, on Cilium only (`data/raw/dev/smoke-with-victim/`;
   `trial.json`'s `node` is `npw-cilium-control-plane`; developer scratch,
   never pooled with `data/raw/exp1b/`; the trial's stream stays local but
   its `checksums.sha256` is committed, on the same rule as every other
@@ -113,10 +120,27 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
   threshold from, so 20 (rather than, say, 15 or 25) is pre-registered as
   a judgement reflecting "most but visibly not all trials censored under
   a ~2x margin," not a value calculated from the instrument-check data.
-  If H2 holds, the documentation's hazard is unreachable on one node with
-  one policy; observing it requires lengthening `L` (scale: nodes,
-  policies, endpoints), which ADR 0002 places out of scope for this
-  harness.
+  H2 is a prediction about *how often* the policy wins this race. It is
+  not, on its own, a claim that the documentation's hazard is out of
+  reach here: at exactly 20 of 30, ten trials per CNI witnessed the
+  hazard directly. The two are therefore stated separately, and these
+  three outcomes are mutually exclusive:
+
+  - **Every `with-victim` trial left-censored, on all three CNIs** — and
+    only then — supports "the hazard was not reachable at this scale with
+    this ordering". Reaching it would then need a longer `L` (scale:
+    nodes, policies, endpoints), which ADR 0002 places out of scope for
+    this harness. The standing caveat holds: a left-censored trial bounds
+    its window from above, it does not show the window is zero.
+  - **Any uncensored `with-victim` trial** is a direct observation of the
+    hazard the Kubernetes documentation describes — a Pod Ready and
+    reachable while a policy that should have blocked it was not yet
+    enforced — and its window is the measurement Experiment 1 could not
+    make. That is the more significant of the two outcomes, not a failure
+    of the experiment. It does not falsify H2 unless the censored count
+    falls below 20.
+  - **Fewer than 20 of 30 censored, on any CNI** — H2 is falsified: the
+    race is closer than predicted.
 - **H3**: CNIs differ in `L` (`at-ready` arm; two-sided; no direction).
 
 ## Analysis plan
@@ -153,8 +177,12 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
 ## Pilot
 
 `experiments/exp1b-ordering/pilot-matrix.yaml`: Cilium, 3 repetitions per
-arm, raw root `data/raw/exp1b-pilot`, never pooled. Go criteria, all
-required: 6 of 6 trials complete with verifying checksums; the 3
+arm, raw root `data/raw/exp1b-pilot`, never pooled. Run it as
+`task exp1b:pilot`, which sets the matrix and that raw root together —
+the pilot's six run ids are the same as the main matrix's first three
+Cilium repetitions, so the two must never be selected independently.
+Go criteria, all required: 6 of 6 trials complete with verifying
+checksums; the 3
 `at-ready` trials are all uncensored with `window` in [50, 2000] ms and
 `head_start < 0`; `npw.gaps` reports 0 over threshold. Any failure is a
 no-go: fix the harness, record why as an addendum, re-pilot. The pilot

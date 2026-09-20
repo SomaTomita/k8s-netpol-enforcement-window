@@ -42,10 +42,17 @@ instant is recorded per trial so the ordering is measured, not assumed.
 - Single-node stays valid: every timestamp is still one host's clock.
 - `L` becomes directly measurable with n = 30 per CNI instead of the
   positive control's n = 1.
-- If `with-victim` is left-censored (pre-registered H2), the result is
-  that the hazard is unreachable at this scale — a bound on the regime,
-  not a null. Observing the hazard itself is then explicitly deferred to
-  a multi-node follow-up that must first revisit ADR 0002.
+- If *every* `with-victim` trial is left-censored, the result is that
+  the hazard was not reachable at this scale with this ordering — a
+  bound on the regime, not a null, and one that bounds each trial's
+  window from above rather than showing it is zero. Observing the hazard
+  itself is then explicitly deferred to a multi-node follow-up that must
+  first revisit ADR 0002. Pre-registered H2 is the weaker and separate
+  prediction that ≥ 20 of 30 trials per CNI censor: H2 can hold with
+  uncensored trials in it, and each of those is a direct observation of
+  the hazard — the more significant outcome of the two, and the
+  measurement Experiment 1 could not make. See the Experiment 1b
+  pre-registration, H2, for what each outcome licenses.
 - `scripts/positive-control.sh` becomes a special case of
   `POLICY_AT=at-ready POLICY_DELAY_MS=2000`; it is kept unchanged as the
   instrument that produced the Addendum 3 data.

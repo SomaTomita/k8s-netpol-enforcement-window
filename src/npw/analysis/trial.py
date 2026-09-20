@@ -212,11 +212,19 @@ def load_trial(run_dir: Path) -> Trial:
     Fails clearly (via `ValueError`, naming the offending path) on the
     ways a real trial directory can violate what this module needs: a
     victim.jsonl/cri.jsonl without exactly one matching B/C record, a
-    malformed JSONL line, or a prober.jsonl whose offsets are not
-    ascending. A missing/malformed meta.json key raises a `KeyError`
-    naming that key -- every key read here is written unconditionally by
+    malformed JSONL line, a prober.jsonl whose offsets are not ascending,
+    or a trial.json whose `policy_at` contradicts meta.json's. A
+    missing/malformed meta.json key raises a `KeyError` naming that key
+    -- every key read here is written unconditionally by
     `runner.write_meta`, so this only fires on a hand-edited or
     otherwise corrupt meta.json.
+
+    The `policy_at` cross-check is what makes the arm label a measured
+    fact rather than an assumed one (ADR 0004: "the ordering is measured,
+    not assumed"). meta.json records the runner's *intent*; trial.json
+    records what `scripts/trial.sh` actually did. Where both exist they
+    must agree, or the trial is mislabelled and every derived quantity
+    grouped by arm is wrong.
     """
     meta = json.loads((run_dir / "meta.json").read_text())
     # trial.json is written by scripts/trial.sh and is absent from the
@@ -225,6 +233,17 @@ def load_trial(run_dir: Path) -> Trial:
     trial_json_path = run_dir / "trial.json"
     trial_json = json.loads(trial_json_path.read_text()) if trial_json_path.exists() else {}
     issued = trial_json.get("policy_apply_issued_ns")
+    policy_at = str(meta.get("policy_at", "before"))
+    ran_policy_at = trial_json.get("policy_at")
+    # Experiment 1's 270 trials have a trial.json without this key (the
+    # field postdates them), and the synthetic fixtures have no trial.json
+    # at all; both stay legal. Only a disagreement is an error.
+    if ran_policy_at is not None and str(ran_policy_at) != policy_at:
+        raise ValueError(
+            f"{trial_json_path}: policy_at is {str(ran_policy_at)!r}, but meta.json says "
+            f"{policy_at!r} -- the arm the runner intended and the arm scripts/trial.sh "
+            "actually ran disagree, so the trial's arm label is not a measurement"
+        )
     c = _one_t_ready_record(run_dir / "victim.jsonl", "C")
     b = _one_t_ready_record(run_dir / "cri.jsonl", "B")
     observations = _jsonl(run_dir / "prober.jsonl")
@@ -244,7 +263,7 @@ def load_trial(run_dir: Path) -> Trial:
         observations=observations,
         t_ready_c_ns=int(c["offset_ns"]),
         t_ready_b_ns=int(b["offset_ns"]),
-        policy_at=str(meta.get("policy_at", "before")),
+        policy_at=policy_at,
         policy_apply_issued_ns=int(issued) if issued is not None else None,
     )
 

@@ -1,6 +1,6 @@
 """Per-condition summary and pairwise CNI comparison: pure functions, no I/O.
 
-One row per (CNI, churn rate) condition, reporting median + percentile
+One row per (CNI, churn rate, policy timing) condition, reporting median + percentile
 bootstrap 95% CI (`npw.analysis.stats.bootstrap_ci`) as
 `experiments/exp1-window/preregistration.md`'s Analysis plan requires,
 plus the counts that plan promises to report alongside them: the
@@ -70,8 +70,8 @@ measurements:
    rank, and moving it further down cannot change which trial occupies
    that rank.
 
-Cross-CNI comparison is Mann-Whitney U per churn level with
-Holm-Bonferroni across the pairs tested. Note that preregistration.md
+Cross-CNI comparison is Mann-Whitney U per (churn level, policy
+timing) with Holm-Bonferroni across the pairs tested. Note that preregistration.md
 freezes only "pairwise, with multiple-comparison correction (method to
 be named in the amendment that adds Calico/Antrea support -- not yet
 decided)": the *method* implemented here is therefore not itself frozen
@@ -634,9 +634,9 @@ def _estimate_cells(row: dict) -> tuple[str, str]:
 def render_markdown(summary_rows: Sequence[dict], pairwise_rows: Sequence[Sequence[dict]]) -> str:
     """Render the summary and pairwise tables as the thesis-facing report.
 
-    `pairwise_rows` is one list per churn level (the shape
-    `pairwise_cni` returns), so the caller decides which levels to
-    include rather than this function re-deriving them.
+    `pairwise_rows` is one list per (churn level, policy timing) cell
+    (the shape `pairwise_cni` returns), so the caller decides which cells
+    to include rather than this function re-deriving them.
     """
     lines = [
         "# Experiment results: unprotected window by CNI, churn rate and policy timing",

@@ -179,11 +179,14 @@ instant an independent variable, `policy_at`, with three values —
 `at-ready` (the instant candidate C is observed, plus an optional delay)
 — implemented in one place, `scripts/trial.sh`, and recorded per trial:
 
-- `t_policy_issued` (`trial.json` `policy_apply_issued_ns`): the instant
-  before `kubectl apply` is invoked. Enforcement latency is measured from
-  here so that the API round-trip is inside it, as it is for an operator.
-- `t_policy_returned` (`policy_apply_returned_ns`): the instant the apply
-  returned, so the API part can be separated afterwards.
+- `t_policy_issued` (`trial.json` `policy_apply_issued_ns`): the offset
+  from the run epoch to the instant before `kubectl apply` is invoked —
+  an offset like `t_ready_c_ns`, not a wall-clock timestamp. Enforcement
+  latency is measured from here so that the API round-trip is inside it,
+  as it is for an operator.
+- `t_policy_returned` (`policy_apply_returned_ns`): the same offset for
+  the instant the apply returned, so the API part can be separated
+  afterwards.
 
 Two derived quantities join `window`:
 

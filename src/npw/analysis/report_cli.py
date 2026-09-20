@@ -1,4 +1,8 @@
-"""CLI: evaluate a raw Experiment 1 tree into a processed report.
+"""CLI: evaluate a raw experiment tree into a processed report.
+
+Serves Experiment 1 (`exp1:analyze`) and Experiment 1b (`exp1b:analyze`)
+alike: the raw root is an argument, and `policy_at` is read per trial, so
+a tree with one arm and a tree with three go through the same code path.
 
     uv run python -m npw.analysis.report_cli data/raw/exp1 data/processed/exp1
 
@@ -7,8 +11,8 @@ one (`npw.analysis.trial`), and writes derived files to the output
 directory:
 
 - `trials.csv`           -- one row per evaluated trial, the full `TrialResult`
-- `summary.csv`          -- one row per (CNI, churn) condition
-- `pairwise.csv`         -- Mann-Whitney U + Holm per churn level
+- `summary.csv`          -- one row per (CNI, churn, policy timing) condition
+- `pairwise.csv`         -- Mann-Whitney U + Holm per (churn level, policy timing)
 - `latency.csv`          -- one row per (CNI, policy timing) enforcement-latency cell
 - `latency_pairwise.csv` -- Mann-Whitney U + Holm per policy timing, enforcement latency
 - `summary.md`           -- all of the above tables, rendered for the write-up

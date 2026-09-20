@@ -7,8 +7,12 @@ NetworkPolicy to actually dropping traffic. Unlike the window, it is only
 
 - a **left-censored** trial was already Blocked at the first post-ready
   look, so its recorded latency is the harness's own floor -- an upper
-  bound with no latency inside it. It is counted (`n_left_censored`) and
-  left out of the median, never averaged in as if it were a measurement.
+  bound with no latency inside it. It is counted (`n_left_censored`, but
+  only if it has a `policy_apply_issued_ns`: a left-censored Experiment 1
+  trial has no latency to bound, so it counts under `n_no_apply_time`
+  below instead, and such a cell reads `n_left_censored = 0` despite
+  every trial in it being censored) and left out of the median, never
+  averaged in as if it were a measurement.
 - a **right-censored** trial never enforced within the trial: its latency
   is at least the trial's remaining length, and unbounded above. One such
   trial in a cell makes the cell's median unidentifiable without a
@@ -65,7 +69,15 @@ def _witnessed(results: Sequence[TrialResult]) -> list[TrialResult]:
 
 
 def summarize_latency(results: Sequence[TrialResult]) -> list[dict]:
-    """One row per (cni, policy_at), sorted; see the module docstring."""
+    """One row per (cni, policy_at), sorted; see the module docstring.
+
+    Deliberately not grouped by `churn_rate_per_min`, unlike
+    `report.summarize`: the Experiment 1b Analysis plan (item 2) asks for
+    `L` "per (cni, policy_at)", and that matrix fixes churn at 1/min, so
+    a churn axis here would add a degenerate dimension rather than a
+    distinction. Pooling across churn levels would only start to matter
+    if a later matrix varied both.
+    """
     rows = []
     for cni, policy_at in sorted({(r.cni, r.policy_at) for r in results}):
         cell = [r for r in results if r.cni == cni and r.policy_at == policy_at]
