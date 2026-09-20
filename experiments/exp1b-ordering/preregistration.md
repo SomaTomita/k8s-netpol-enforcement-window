@@ -210,3 +210,66 @@ Append-only dated addenda. No parameter above changes after the pilot's
 go decision. A discovered defect is fixed in code, recorded here with its
 evidence, and — if it affected collected trials — those trials are
 re-collected, not re-interpreted.
+
+
+---
+
+## Addendum 1 — 2026-09-20: pilot outcome and go decision
+
+Six trials, Cilium, `data/raw/exp1b-pilot/`, never pooled with the main
+run. All six completed and all six `checksums.sha256` verify.
+`uv run python -m npw.gaps data/raw/exp1b-pilot` reports 0 of 6 over the
+5000 ms threshold.
+
+| run_id | arm | window (ms) | L (ms) | head start (ms) | left-cens. | right-cens. | error rate |
+|---|---|---|---|---|---|---|---|
+| run-0000-000 | with-victim | 96.9 | 1895.3 | +1798.4 | yes | no | 0.0 |
+| run-0000-001 | with-victim | 8.0 | 1239.4 | +1231.4 | yes | no | 0.0 |
+| run-0000-002 | with-victim | 2.2 | 1269.1 | +1266.8 | yes | no | 0.0 |
+| run-0001-000 | at-ready | 1019.8 | 785.5 | −234.3 | no | no | 0.0 |
+| run-0001-001 | at-ready | 513.4 | 329.1 | −184.2 | no | no | 0.0 |
+| run-0001-002 | at-ready | 435.1 | 276.5 | −158.7 | no | no | 0.0 |
+
+**Every pre-registered go criterion is met.** Six of six complete and
+verifying; all three `at-ready` trials uncensored with `window` inside
+[50, 2000] ms and `head_start < 0`; no gap over threshold. The harness
+produces a witnessed `Allowed`→`Blocked` transition on demand in the
+`at-ready` arm, and the three `with-victim` trials are left-censored,
+the direction H2 predicts.
+
+**Go — for the harness. The full run is additionally gated on host
+quiescence, for a reason this pilot surfaced.**
+
+Every one of the six trials records a candidate-B/candidate-C skew
+between −46.3 ms and −140.9 ms, and five of the six tripped
+`scripts/trial.sh`'s 50 ms runtime canary. Across Experiment 1's 270
+trials that canary never fired once: their skews run from −24.2 ms to
+−1.5 ms, median −3.9 ms. The pilot's whole timeline is slower in
+proportion — median `t_ready_c` 5033 ms against Experiment 1's 2611 ms,
+1.9x. The host was carrying a 15-minute load average of 16 while these
+trials ran. Nothing here indicates a harness defect: the error rate is
+0.0000 throughout, no gap exceeds the threshold, and the arms behave as
+designed.
+
+What it does mean is that a full run collected in this host state would
+not be comparable with Experiment 1, and Experiment 1 is this
+experiment's `before` arm. The effect is not uniform noise: the
+`with-victim` head start came out at +1231 to +1798 ms here, against the
+517.3 ms measured pre-freeze on a quiet host, so a loaded machine hands
+the CNI two to three times the head start H2's threshold was calibrated
+against. H2 would then be satisfied by the host's slowness rather than
+by the CNI's speed.
+
+**Consequence for the full run.** Before Experiment 1b's 180 trials are
+collected, the host must be quiescent enough to reproduce Experiment 1's
+own B/C envelope. This is not a new analysis parameter and changes
+nothing above: the harness already records `b_c_skew_ns` per trial,
+flags it at the pre-registered 5 ms in `b_c_flagged`, and reports
+`n_b_c_flagged` per condition. The addition is procedural — the run is
+started only when a check trial's skew falls inside Experiment 1's
+observed range (|skew| at most ~25 ms), and the realised B/C
+distribution is reported alongside the results either way, so a reader
+can judge comparability directly rather than taking it on trust.
+
+The pilot's own numbers are therefore reported here as evidence that the
+instrument works, and are not used to calibrate anything.
