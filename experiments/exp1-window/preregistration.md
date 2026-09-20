@@ -874,7 +874,10 @@ dial timeout). These are not measurements of anything. Per the
 repository's data-immutability rule they were moved to
 `data/raw/exp1-failed/<run_id>/` with a `REASON.md` each, not deleted,
 and `npw.runner.pending()` re-offered their conditions so fresh trials
-were collected. The 270 analysed are 270 complete trials. Remediation:
+were collected. The 270 analysed are 270 complete trials. `data/raw/` is
+not committed, so those `REASON.md` files live only alongside the raw
+streams they describe; their substance is reproduced here and in
+`docs/results/exp1.md` so the discard is on the public record. Remediation:
 `caffeinate -s -i -d -m -u` held for the remainder of the run; the
 earlier `caffeinate -i -t 300` covered idle sleep only. Every subsequent
 trial was scanned for inter-observation gaps over 5 s — the largest gap
