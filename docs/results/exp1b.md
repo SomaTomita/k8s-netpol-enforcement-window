@@ -223,6 +223,9 @@ no sense of the magnitude involved. There is now a measured answer for
 three CNIs at one scale, with the ordering the docs warn about tested
 directly.
 
-A revised draft issue exists and is deliberately unsent; filing it is the
-author's decision, and it should say plainly that these are single-node
-figures.
+Filed as [kubernetes/website#57642](https://github.com/kubernetes/website/issues/57642)
+on 2026-09-20, as a question rather than a PR: it asks whether a
+non-normative note on the magnitude belongs on a concept page at all, and
+says plainly that these are single-node figures and a floor rather than an
+estimate. A maintainer judging it out of scope is an acceptable outcome and
+the issue says so.

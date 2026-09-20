@@ -335,3 +335,19 @@ began, after 32 trials, and resumed once a fresh check trial passed.
 Nothing was recollected: `pending()` resumes from each trial's completion
 marker, and trial order is interleaved by repetition, so a pause changes
 which wall-clock minute a trial ran in and nothing else.
+
+
+---
+
+## Addendum 3 — 2026-09-20: upstream report
+
+The `at-ready` arm's latencies and the `with-victim` arm's outcome were
+reported upstream as
+[kubernetes/website#57642](https://github.com/kubernetes/website/issues/57642),
+asking whether a non-normative note on the magnitude of the NetworkPolicy
+handling delay is in scope for the Pod lifecycle section. It is a question,
+not a proposed wording, and it states that the figures are single-node and a
+floor rather than an estimate. Experiment 1's results were deliberately not
+reported upstream (`docs/results/exp1.md`, Upstream) because they
+corroborated the page without adding magnitude; this addendum records that
+Experiment 1b changed that judgement and why.
