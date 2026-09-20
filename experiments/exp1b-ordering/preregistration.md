@@ -2,7 +2,13 @@
 
 Frozen 2026-09-20, before the pilot. Amendments are dated, append-only
 addenda at the end of this file; nothing above the first addendum is
-edited after the fact.
+edited after the fact. The freeze binds from the merge of the branch
+that introduces this file — the point at which the protocol first
+governs a collection, the pilot being the first run against it — so the
+drafting and correction before that point are recorded in that branch's
+commit history rather than as addenda, there being no collected data for
+a change to be post-hoc to. From the merge onward the append-only
+addendum rule above is the only way this protocol changes.
 
 ## Question
 
