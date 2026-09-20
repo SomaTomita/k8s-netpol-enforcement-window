@@ -70,6 +70,28 @@ def test_policy_at_expands_as_the_innermost_factor():
     assert runs[3].run_id == "run-0001-000" and runs[3].policy_at == "at-ready"
 
 
+def test_policy_at_is_innermost_when_another_factor_also_varies():
+    # With two cni values AND two policy_at values, product()'s argument
+    # order becomes observable: policy_at innermost pairs each cni with
+    # both arms before moving to the next cni. Putting policy_at first
+    # instead would interleave the cnis, which is what this pins down --
+    # and it is what keeps Experiment 1's 270 committed run ids stable.
+    runs = expand(
+        _spec(
+            cni=["cilium", "calico"],
+            churn_rate_per_min=[1],
+            policy_at=["with-victim", "at-ready"],
+            repetitions=1,
+        )
+    )
+    assert [(r.run_id, r.cni, r.policy_at) for r in runs] == [
+        ("run-0000-000", "cilium", "with-victim"),
+        ("run-0001-000", "cilium", "at-ready"),
+        ("run-0002-000", "calico", "with-victim"),
+        ("run-0003-000", "calico", "at-ready"),
+    ]
+
+
 def test_unknown_policy_at_raises_value_error():
     with pytest.raises(ValueError, match="policy_at"):
         expand(_spec(policy_at=["after-lunch"]))
