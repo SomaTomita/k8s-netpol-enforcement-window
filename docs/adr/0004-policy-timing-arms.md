@@ -12,10 +12,19 @@ hazard needs the network plugin's policy handling to still be incomplete
 when the Pod starts. There are two ways to reach that regime:
 
 1. Lengthen the plugin's handling time — more nodes, more policies, more
-   endpoints. This is what real clusters do (projectcalico/calico #9706
-   reports startup connectivity gaps of up to two minutes at 50+ nodes),
-   but it needs a multi-node cluster and therefore cross-host clock
-   synchronisation, which ADR 0002 rules out for this harness.
+   endpoints. Real clusters can see dataplane programming lag by minutes:
+   projectcalico/calico #9706 is a single, unresolved user report (closed
+   for inactivity; `kind/support`; Calico 3.27.4) of pods starting with no
+   *outbound* connectivity for up to two minutes — with no NetworkPolicies
+   applied at all, the opposite polarity from this project's unprotected
+   window — traced to calico-node missing a `WorkloadEndpointUpdate`. The
+   reporter correlates the episodes with pod-creation bursts and
+   control-plane memory pressure, not node count; a Calico maintainer
+   replies in-thread that "50 nodes is a small cluster." The issue
+   supports "dataplane programming can lag by minutes in real clusters,"
+   not a claim that policy handling scales with node count. Reaching a
+   longer `L` this way needs a multi-node cluster and therefore cross-host
+   clock synchronisation, which ADR 0002 rules out for this harness.
 2. Shorten the head start the plugin gets — apply the policy later,
    relative to the Pod, under the harness's control.
 

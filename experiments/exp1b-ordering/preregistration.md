@@ -8,9 +8,12 @@ edited after the fact.
 
 Experiment 1 (`docs/results/exp1.md`) measured the favourable ordering —
 NetworkPolicy created ~2.4 s before the Pod reported Ready — and found
-all 270 trials left-censored below a 5.97–9.48 ms floor. The Kubernetes
-documentation's hazard is the other ordering: a Pod "created before the
-network plugin has completed NetworkPolicy handling". Experiment 1b asks:
+all 270 trials left-censored, with per-cell median floors of ~6–9.5 ms
+(the full per-trial distribution: min 1.01 ms, median 7.73 ms, 95th
+percentile 18.38 ms, max 194.21 ms; 3.7% of trials exceed 20 ms). The
+Kubernetes documentation's hazard is the other ordering: a Pod "created
+before the network plugin has completed NetworkPolicy handling".
+Experiment 1b asks:
 
 1. How long does each CNI take to enforce a policy once asked
    (`L = t_blocked − t_policy_issued`), measured with the Pod already
@@ -55,31 +58,59 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
 
 - **H1** (`at-ready`): every trial is uncensored — an Allowed → Blocked
   transition after `t_ready` is witnessed — and each CNI's median `L`
-  lies in [100, 1000] ms. Prior: the Addendum 3 positive control
-  (`data/raw/positive-control/`, n = 1 per CNI) recovered 224.4–307.0 ms
-  over an imposed 2000 ms delay. The interval is deliberately wide; it
-  is a sanity bound, not a point prediction.
+  lies in [100, 1000] ms. Prior: the repo's only *direct* figure is
+  Cilium's 127.8 ms from `kubectl apply` returning to the
+  sustained-Blocked run's start, stated in Experiment 1's
+  preregistration Addendum 3 rather than recomputable from committed
+  data (the positive-control `trial.json` files record no
+  `policy_apply_issued_ns`, so `L` itself cannot be computed from them).
+  The Addendum 3 positive control (`data/raw/positive-control/`, n = 1
+  per CNI) recovered a window 224.4–307.0 ms in excess of the imposed
+  2000 ms delay; that excess is an *upper bound* on `L`, not `L` itself,
+  since it also contains the `time.sleep` wake-up and the `kubectl
+  apply` round trip. The band is calibrated against the direct Cilium
+  figure (127.8 ms), with the three-CNI excess (224.4–307.0 ms, an upper
+  bound) as corroborating order of magnitude; it is deliberately wide
+  and is a sanity bound, not a point prediction. The lower bound sits
+  close to the harness's own resolution: per Experiment 1's Addendum 1
+  B1, a blocked dial on a dropping CNI consumes the full 200 ms timeout,
+  so confirming `k = 3` consecutive `Blocked` observations costs up to
+  `(k − 1) × 200 ms = 400 ms` after the true transition; a witnessed `L`
+  near 100 ms should be read as at-or-below what this instrument
+  resolves, not as a precise measurement.
 - **H2** (`with-victim`): ≥ 20 of 30 trials per CNI are left-censored.
   Reasoning: in this arm the policy is applied immediately after the
   victim Deployment's apply returns, so the CNI's head start is not the
-  full Pod-creation interval Experiment 1 measured for the `before` arm —
-  it is only what remains of it once the apply round-trip has elapsed. A
-  single pre-freeze instrument-check trial run while building this
-  harness (`data/raw/dev/smoke-with-victim/`, developer scratch, never
-  pooled with `data/raw/exp1b/`) measured that head start at 517.3 ms,
-  against the 224.4–307.0 ms `L` prior from the Addendum 3 positive
-  control — a margin of roughly 2x, not the ~10x margin Experiment 1's
-  `before` arm had (Pod creation to candidate C took 2380–3571 ms there,
-  against the same `L` prior), which is why `before` censored all 270
-  trials. Disclosure: setting this threshold from a disclosed
-  instrument-check trial before freezing the protocol is the intended
-  use of such a trial; a threshold derived instead from the `before`
-  arm's ~10x margin — which does not apply to `with-victim` — would not
-  be. Because the margin here is only ~2x, a nontrivial minority of
-  uncensored trials is expected, unlike `before`. If H2 holds, the
-  documentation's hazard is unreachable on one node with one policy;
-  observing it requires lengthening `L` (scale: nodes, policies,
-  endpoints), which ADR 0002 places out of scope for this harness.
+  full run-epoch-to-candidate-C interval Experiment 1 measured for the
+  `before` arm — it is only what remains of it once the apply round-trip
+  has elapsed. A single pre-freeze instrument-check trial run while
+  building this harness, on Cilium only (`data/raw/dev/smoke-with-victim/`;
+  `trial.json`'s `node` is `npw-cilium-control-plane`; developer scratch,
+  never pooled with `data/raw/exp1b/`; the trial's stream stays local but
+  its `checksums.sha256` is committed, on the same rule as every other
+  trial), measured that head start at 517.3 ms, against the 224.4–307.0 ms
+  upper bound on `L` from the Addendum 3 positive control (see H1 — this
+  is a bound, not a measurement, of `L`) — a margin of roughly 2x, not
+  the ~10x margin Experiment 1's `before` arm had (candidate C fired
+  2380–3571 ms after the *run epoch* there, which precedes Pod creation,
+  against the same bound on `L`), which is why `before` censored all 270
+  trials. This head start is measured on Cilium only; Calico and Antrea
+  are assumed comparable on this quantity, not measured, and their
+  dataplanes differ enough that the assumption is untested. Disclosure:
+  setting this threshold from a disclosed instrument-check trial before
+  freezing the protocol is the intended use of such a trial; a threshold
+  derived instead from the `before` arm's ~10x margin — which does not
+  apply to `with-victim` — would not be. Because the margin here is only
+  ~2x, a nontrivial minority of uncensored trials is expected, unlike
+  `before`. The 20-of-30 cutoff is itself a judgement call, not a
+  computed one: n = 1 gives no dispersion estimate to derive a precise
+  threshold from, so 20 (rather than, say, 15 or 25) is pre-registered as
+  a judgement reflecting "most but visibly not all trials censored under
+  a ~2x margin," not a value calculated from the instrument-check data.
+  If H2 holds, the documentation's hazard is unreachable on one node with
+  one policy; observing it requires lengthening `L` (scale: nodes,
+  policies, endpoints), which ADR 0002 places out of scope for this
+  harness.
 - **H3**: CNIs differ in `L` (`at-ready` arm; two-sided; no direction).
 
 ## Analysis plan
@@ -88,10 +119,14 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
    unchanged rules (rank substitution, identifiability, bounds).
 2. `L` per (cni, policy_at): `npw.analysis.latency.summarize_latency` —
    median and percentile bootstrap 95% CI (10 000 resamples, fixed seed)
-   over trials with a witnessed transition. Left-censored trials are
-   counted and excluded from the median (a floor has no latency inside
-   it). Any right-censored trial in a cell withholds that cell's
-   estimate; the count is reported.
+   over trials with a witnessed transition. A cell with exactly one
+   witnessed trial reports that trial's value as the median with no CI
+   (`estimate_kind="single"`), since a bootstrap needs more than one
+   observation. Left-censored trials are counted and excluded from the
+   median (a floor has no latency inside it). Any right-censored trial in
+   a cell withholds that cell's estimate; the count is reported. A trial
+   with no `policy_apply_issued_ns` (Experiment 1 trials; not applicable
+   within this matrix) is counted separately as `n_no_apply_time`.
 3. `head_start` per arm: min / median / max from `trials.csv`.
 4. H3: Mann-Whitney U (two-sided) on witnessed `L` per CNI pair within
    `at-ready`, Holm-Bonferroni across the three pairs, α = 0.05.
@@ -113,6 +148,15 @@ required: 6 of 6 trials complete with verifying checksums; the 3
 `head_start < 0`; `npw.gaps` reports 0 over threshold. Any failure is a
 no-go: fix the harness, record why as an addendum, re-pilot. The pilot
 does not tune any parameter above.
+
+This `window` band is a functional check — that the harness produces an
+uncensored measurement in this arm at all — not a test of H1. `L` is
+smaller than `window` in this arm, because `head_start` is negative here
+(`L − window = head_start`); a pilot trial passing at the low end of
+[50, 2000] ms could therefore still have an `L` at or below what the
+instrument resolves (H1's own resolution note), and would not by itself
+confirm H1's band. H1's `L` distribution is judged separately, over the
+full run's 30 trials per CNI, not by this pilot.
 
 ## Amendment policy
 

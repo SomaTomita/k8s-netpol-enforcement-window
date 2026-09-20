@@ -36,6 +36,19 @@ data/processed/**
 # the whole directory.
 data/raw/dev/
 
+# ...but the one instrument-check trial the Experiment 1b pre-registration
+# cites for its H2 threshold must stay auditable, on the same rule as every
+# other trial: its checksum is committed, its stream is not. git prunes an
+# excluded directory from traversal entirely, so re-including a file two
+# levels down means re-opening (and re-closing) every level in between —
+# see gitignore(5), "It is not possible to re-include a file if a parent
+# directory of that file is excluded".
+!data/raw/dev/
+data/raw/dev/*
+!data/raw/dev/smoke-with-victim/
+data/raw/dev/smoke-with-victim/*
+!data/raw/dev/smoke-with-victim/checksums.sha256
+
 # editor / OS
 .DS_Store
 .idea/
