@@ -273,3 +273,65 @@ can judge comparability directly rather than taking it on trust.
 
 The pilot's own numbers are therefore reported here as evidence that the
 instrument works, and are not used to calibrate anything.
+
+---
+
+## Addendum 2 — 2026-09-20: full run outcome
+
+180 trials, Cilium 1.20.0 / Calico v3.32.2 / Antrea 2.7.0 x
+{`with-victim`, `at-ready`} x 30, `data/raw/exp1b/`. All 180
+`checksums.sha256` verify; `npw.gaps` reports 0 of 180 over the 5000 ms
+threshold; 0 excluded, 0 right-censored, 0 negative windows, probe error
+rate 0.0000 throughout. No analysis choice was changed after seeing the
+data. Full tables: `docs/results/exp1b.md`.
+
+**H1 — the censoring prediction held, the interval did not.** All 90
+`at-ready` trials were uncensored, as predicted. Median `L` came out at
+51.1 ms (Antrea, CI [50.5, 52.7]), 55.9 ms (Calico, [55.2, 56.4]) and
+115.9 ms (Cilium, [104.4, 137.0]). Two of the three fall below the
+pre-registered 100 ms lower bound, so H1 is falsified for Antrea and
+Calico and holds for Cilium.
+
+The band was built to contain a bracket whose lower end — Addendum 3's
+127.8 ms — is a **Cilium** figure, and Cilium's result contains it. The
+error was generalising one CNI's latency to all three while H3, in the
+same document, predicted they would differ. Recorded here rather than
+adjusted: the band was frozen before the pilot and stays as written.
+
+**H2 — confirmed in the one form that licenses the strong conclusion.**
+All 30 `with-victim` trials were left-censored on each of the three CNIs.
+The inference rule above reserves "the hazard was not reachable at this
+scale with this ordering" for exactly the case where every trial is
+censored on all three CNIs, and that is what occurred. The margin was
+wider than H2 argued: the head start came out at +386.8 to +570.6 ms
+(medians 416-492 ms, close to the 517.3 ms measured pre-freeze) against
+an `L` of 51-116 ms, so roughly four to nine times rather than two.
+
+**H3 — confirmed.** Mann-Whitney U on witnessed `L` within `at-ready`,
+Holm-adjusted across the three pairs: antrea vs calico p = 0.00117,
+antrea vs cilium p = 9.06e-11, calico vs cilium p = 9.06e-11. All three
+differ.
+
+**Host state.** The run was started only after a check trial's B/C skew
+fell inside Experiment 1's envelope (-8.9 and -22.9 ms against that
+experiment's -24.2 ms maximum), per Addendum 1. Per-CNI skew medians came
+out at -5.0 (cilium), -4.2 (calico) and -3.1 (antrea), against Experiment
+1's -4.0 / -4.2 / -3.6 — the two experiments are comparable on this
+quantity. Four trials of 180 exceeded Experiment 1's observed maximum:
+three during a video call that began mid-run, all in the `with-victim`
+arm where every trial is left-censored and no `L` is computed, and one at
+the first trial of Antrea's `at-ready` condition, consistent with a cold
+start.
+
+**No trial was discarded.** The host-level discard rule in Analysis plan
+item 6 covers inter-observation gaps over 5000 ms and nothing else, and
+no trial met it. Introducing a skew-based exclusion after seeing which
+trials it would remove is precisely the post-hoc selection this
+pre-registration exists to prevent. The four trials remain in the dataset
+and their counts are reported in the `B/C flagged` column.
+
+**Interruption and resumption.** The run was paused when the video call
+began, after 32 trials, and resumed once a fresh check trial passed.
+Nothing was recollected: `pending()` resumes from each trial's completion
+marker, and trial order is interleaved by repetition, so a pause changes
+which wall-clock minute a trial ran in and nothing else.

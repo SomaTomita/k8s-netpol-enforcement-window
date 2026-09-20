@@ -32,6 +32,26 @@ reflects the phenomenon's speed rather than a blind instrument.
 Full numbers, scope limits and the reasons this does *not* show that no
 window exists: [`docs/results/exp1.md`](docs/results/exp1.md).
 
+**Experiment 1b (2026-09-20, 180 trials).** Experiment 1 could not say how
+long the CNI had taken, because enforcement was always already in place.
+Experiment 1b applies the policy *after* the Pod is Ready to measure that
+directly, and applies it *at the same instant* as the Pod to test the
+ordering the Kubernetes documentation warns about.
+
+Enforcement latency `L`, from issuing `kubectl apply` to traffic actually
+being blocked: **Antrea 51.1 ms** [50.5, 52.7], **Calico 55.9 ms**
+[55.2, 56.4], **Cilium 115.9 ms** [104.4, 137.0] — all three pairs differ
+after Holm correction. Antrea and Calico enforce *before `kubectl apply`
+returns to the caller*, in 30 of 30 trials each; Cilium in 0 of 30.
+
+With the policy created at the same instant as the Pod, the policy won
+every time: all 90 such trials were left-censored on all three CNIs, so
+the Pod never became Ready unprotected at this scale.
+
+Full numbers, the falsified half of one hypothesis, and why single-node
+figures are a floor rather than an estimate:
+[`docs/results/exp1b.md`](docs/results/exp1b.md).
+
 ## Quick start
 
 ```bash
@@ -73,6 +93,8 @@ in that directory (requires `pip install diagrams` and Graphviz).
   what is actually being measured.
 - [`docs/results/exp1.md`](docs/results/exp1.md) — Experiment 1's numbers,
   its positive control, and what the result does and does not establish.
+- [`docs/results/exp1b.md`](docs/results/exp1b.md) — Experiment 1b's
+  enforcement-latency figures and the same-instant policy race.
 - [`docs/related-work.md`](docs/related-work.md) — literature basis for
   the research gap.
 - [`docs/adr/`](docs/adr/) — architecture decisions and their rationale.
