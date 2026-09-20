@@ -188,5 +188,30 @@ against the raw stream it came from.
 
 ## Upstream
 
-Pending — to be filled in with the issue URL once filed. Not recorded
-here in advance.
+Not filed. The pre-run rule was to report to a CNI project if any window
+landed above the floor and to `kubernetes/website` otherwise; nothing
+landed above the floor, so the rule pointed at the docs. Reading the
+current page first changed the answer.
+
+The [Pod lifecycle](https://kubernetes.io/docs/concepts/services-networking/network-policies/#pod-lifecycle)
+section already separates the two orderings this result speaks to —
+`kubernetes/website` [#39875](https://github.com/kubernetes/website/issues/39875)
+did that in November 2023 after an extended review. This result
+corroborates that text rather than contradicting it, and there is no
+defect to report. Nor does it contradict any CNI's own claim: Cilium
+documents an unprotected window for *initializing* endpoints absent
+`reserved:init` policies, and candidate C fires only once the victim is
+already listening, so the two describe different instants.
+
+What the page genuinely does not answer is how long the unhandled
+interval lasts, which is what an operator needs in order to judge
+whether its suggested init-container workaround is proportionate. That
+question is worth asking upstream, but it is worth asking with a
+measurement of the *unfavourable* ordering — a policy created
+concurrently with the workload, which is the case the docs warn about
+and the one this experiment did not sample — and at more than
+single-node scale. Filing on the strength of a corroborating
+single-node result would be duplicative.
+
+A drafted issue exists and is deliberately unsent; this section is the
+record of the decision, and will carry the URL if it is ever filed.
