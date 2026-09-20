@@ -113,12 +113,19 @@ def pending(runs: list[Run], raw_root: Path) -> list[Run]:
 
 
 def trial_env(run: Run, raw_root: Path, duration_s: int) -> dict[str, str]:
-    """The exact four env vars scripts/trial.sh reads. No more, no fewer."""
+    """The exact five env vars scripts/trial.sh reads. No more, no fewer.
+
+    `POLICY_AT` selects when trial.sh applies the NetworkPolicy relative
+    to the victim (see that script's header). It is always passed, even
+    for Experiment 1's `before`, so the script never has to guess from an
+    unset variable which experiment it is running.
+    """
     return {
         "CNI": run.cni,
         "RUN_ID": run.run_id,
         "RUN_DIR": str(raw_root / run.run_id),
         "DURATION": str(duration_s),
+        "POLICY_AT": run.policy_at,
     }
 
 
@@ -170,6 +177,7 @@ def write_meta(
         "cni": run.cni,
         "cni_version": cni_version,
         "policy_set": run.policy_set,
+        "policy_at": run.policy_at,
         "churn_rate_per_min": run.churn_rate_per_min,
         "background_churn_per_min": background_rate(run.churn_rate_per_min),
         "repetition": run.repetition,
