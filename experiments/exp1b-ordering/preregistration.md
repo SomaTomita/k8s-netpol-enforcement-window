@@ -130,7 +130,8 @@ Derived (`npw.analysis.trial`): `window_ns = t_blocked − t_ready_c_ns`;
   not, on its own, a claim that the documentation's hazard is out of
   reach here: at exactly 20 of 30, ten trials per CNI witnessed the
   hazard directly. The two are therefore stated separately, and these
-  three outcomes are mutually exclusive:
+  three readings, and only these, are what a result licenses — they say
+  what may be concluded, they do not partition the outcome space:
 
   - **Every `with-victim` trial left-censored, on all three CNIs** — and
     only then — supports "the hazard was not reachable at this scale with

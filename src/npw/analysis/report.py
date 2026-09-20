@@ -538,7 +538,7 @@ def _mann_whitney_p(a: Sequence[float], b: Sequence[float]) -> float:
 def pairwise_cni(
     results: Sequence[TrialResult], churn_rate_per_min: int, policy_at: str = "before"
 ) -> list[dict]:
-    """Pairwise Mann-Whitney U between CNIs at one churn level, Holm-adjusted.
+    """Pairwise Mann-Whitney U between CNIs in one (churn level, policy_at) cell, Holm-adjusted.
 
     Right-censored trials take part, tied at the top of the ranking (see
     `rank_substituted`); `n_right_censored_a`/`_b` are reported so a
