@@ -108,6 +108,7 @@ from npw.analysis.trial import TrialResult
 SUMMARY_FIELDS = (
     "cni",
     "churn_rate_per_min",
+    "policy_at",
     "n",
     "n_excluded",
     "exclusion_rate",
@@ -128,6 +129,7 @@ SUMMARY_FIELDS = (
 
 PAIRWISE_FIELDS = (
     "churn_rate_per_min",
+    "policy_at",
     "cni_a",
     "cni_b",
     "n_a",
@@ -346,7 +348,7 @@ def _right_censoring_order_violated(inc: Sequence[TrialResult]) -> bool:
 
 
 def summarize(results: Sequence[TrialResult]) -> list[dict]:
-    """One summary row per (cni, churn_rate_per_min) condition, sorted.
+    """One summary row per (cni, churn_rate_per_min, policy_at) condition, sorted.
 
     `estimate_kind` says which of the module docstring's cases a row is,
     and is the field to branch on when reading the row:
@@ -374,8 +376,14 @@ def summarize(results: Sequence[TrialResult]) -> list[dict]:
     here, it says which numbers to distrust.
     """
     rows = []
-    for cni, churn in sorted({(r.cni, r.churn_rate_per_min) for r in results}):
-        condition = [r for r in results if r.cni == cni and r.churn_rate_per_min == churn]
+    for cni, churn, policy_at in sorted(
+        {(r.cni, r.churn_rate_per_min, r.policy_at) for r in results}
+    ):
+        condition = [
+            r
+            for r in results
+            if r.cni == cni and r.churn_rate_per_min == churn and r.policy_at == policy_at
+        ]
         inc = _included(condition)
         n = len(inc)
         n_right = sum(1 for r in inc if r.right_censored)
@@ -446,6 +454,7 @@ def summarize(results: Sequence[TrialResult]) -> list[dict]:
             {
                 "cni": cni,
                 "churn_rate_per_min": churn,
+                "policy_at": policy_at,
                 "n": n,
                 "n_excluded": len(condition) - n,
                 "exclusion_rate": (len(condition) - n) / len(condition),
@@ -526,7 +535,9 @@ def _mann_whitney_p(a: Sequence[float], b: Sequence[float]) -> float:
     return float(stats.mannwhitneyu(a, b, alternative="two-sided").pvalue)
 
 
-def pairwise_cni(results: Sequence[TrialResult], churn_rate_per_min: int) -> list[dict]:
+def pairwise_cni(
+    results: Sequence[TrialResult], churn_rate_per_min: int, policy_at: str = "before"
+) -> list[dict]:
     """Pairwise Mann-Whitney U between CNIs at one churn level, Holm-adjusted.
 
     Right-censored trials take part, tied at the top of the ranking (see
@@ -534,15 +545,16 @@ def pairwise_cni(results: Sequence[TrialResult], churn_rate_per_min: int) -> lis
     reader can judge how much of a pair's result rests on that
     substitution rather than on observed windows.
 
-    Holm's family is the pairs tested **within this one churn level**.
-    Each call controls the family-wise error rate at 0.05 across its own
-    level, so a report covering three churn levels prints up to nine
-    comparisons controlled in three families of three, not one family of
-    nine. That is what makes a printed `p_adj` interpretable, and it is
-    the sentence to carry into any write-up of this table; treating the
-    whole table as one family would require a further correction that is
-    deliberately not applied here, because the churn levels are separate
-    pre-registered conditions rather than repeated tests of one question.
+    Holm's family is the pairs tested within this one (churn level,
+    policy_at) condition. Each call controls the family-wise error rate
+    at 0.05 across its own level, so a report covering three churn levels
+    prints up to nine comparisons controlled in three families of three,
+    not one family of nine. That is what makes a printed `p_adj`
+    interpretable, and it is the sentence to carry into any write-up of
+    this table; treating the whole table as one family would require a
+    further correction that is deliberately not applied here, because the
+    churn levels are separate pre-registered conditions rather than
+    repeated tests of one question.
 
     A CNI with no included trials at this churn level has no group and
     so is not compared -- adjusting across three pairs when only one was
@@ -551,7 +563,11 @@ def pairwise_cni(results: Sequence[TrialResult], churn_rate_per_min: int) -> lis
     `n = 0`, so a silently missing arm is visible there rather than only
     by a pair's absence here.
     """
-    inc = [r for r in _included(results) if r.churn_rate_per_min == churn_rate_per_min]
+    inc = [
+        r
+        for r in _included(results)
+        if r.churn_rate_per_min == churn_rate_per_min and r.policy_at == policy_at
+    ]
     groups = {cni: [r for r in inc if r.cni == cni] for cni in sorted({r.cni for r in inc})}
     pairs = list(combinations(groups, 2))
     p_raw = [
@@ -561,6 +577,7 @@ def pairwise_cni(results: Sequence[TrialResult], churn_rate_per_min: int) -> lis
     return [
         {
             "churn_rate_per_min": churn_rate_per_min,
+            "policy_at": policy_at,
             "cni_a": a,
             "cni_b": b,
             "n_a": len(groups[a]),
@@ -622,7 +639,7 @@ def render_markdown(summary_rows: Sequence[dict], pairwise_rows: Sequence[Sequen
     include rather than this function re-deriving them.
     """
     lines = [
-        "# Experiment 1: unprotected window by CNI and churn rate",
+        "# Experiment results: unprotected window by CNI, churn rate and policy timing",
         "",
         (
             "All times in milliseconds. `p` is the probe interval, the prober's polling "
@@ -652,10 +669,10 @@ def render_markdown(summary_rows: Sequence[dict], pairwise_rows: Sequence[Sequen
         ),
         "",
         (
-            "| CNI | churn/min | n | excluded | excl. rate | left-cens. | right-cens. | "
+            "| CNI | churn/min | policy at | n | excluded | excl. rate | left-cens. | right-cens. | "
             "neg. window | B/C flagged | p (ms) | median (ms) | 95% CI (ms) |"
         ),
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in summary_rows:
         median_cell, ci_cell = _estimate_cells(row)
@@ -666,7 +683,7 @@ def render_markdown(summary_rows: Sequence[dict], pairwise_rows: Sequence[Sequen
             # -- the median cell has to carry that, not only the `p` cell.
             median_cell += " (mixed p)"
         lines.append(
-            f"| {row['cni']} | {row['churn_rate_per_min']} | {row['n']} | "
+            f"| {row['cni']} | {row['churn_rate_per_min']} | {row['policy_at']} | {row['n']} | "
             f"{row['n_excluded']} | {row['exclusion_rate']:.3f} | "
             f"{row['n_left_censored']} | {row['n_right_censored']} | "
             f"{row['n_negative_window']} | "
@@ -674,7 +691,7 @@ def render_markdown(summary_rows: Sequence[dict], pairwise_rows: Sequence[Sequen
         )
 
     violated = [
-        f"{row['cni']} @ {row['churn_rate_per_min']}/min"
+        f"{row['cni']} @ {row['churn_rate_per_min']}/min, {row['policy_at']}"
         for row in summary_rows
         if row["right_censoring_order_violated"]
     ]
@@ -698,25 +715,26 @@ def render_markdown(summary_rows: Sequence[dict], pairwise_rows: Sequence[Sequen
         "## Pairwise CNI comparison",
         "",
         (
-            "Mann-Whitney U (two-sided) per churn level, Holm-Bonferroni adjusted across "
-            "the pairs tested. Censored trials are ranked, never dropped: right-censored "
-            "ones enter tied at the top of the ranking, left-censored ones tied at the "
-            "bottom. Both counts are in the table below, per side of each pair."
+            "Mann-Whitney U (two-sided) per (churn level, policy timing) condition, "
+            "Holm-Bonferroni adjusted across the pairs tested. Censored trials are "
+            "ranked, never dropped: right-censored ones enter tied at the top of the "
+            "ranking, left-censored ones tied at the bottom. Both counts are in the "
+            "table below, per side of each pair."
         ),
         "",
         (
-            "| churn/min | pair | n a | n b | right-cens. a | right-cens. b | "
+            "| churn/min | policy at | pair | n a | n b | right-cens. a | right-cens. b | "
             "left-cens. a | left-cens. b | p raw | p Holm |"
         ),
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     flat = [p for level in pairwise_rows for p in level]
     if not flat:
-        lines.append("| _no pair had two CNIs with included trials_ | | | | | | | | | |")
+        lines.append("| _no pair had two CNIs with included trials_ | | | | | | | | | | |")
     for p in flat:
         lines.append(
-            f"| {p['churn_rate_per_min']} | {p['cni_a']} vs {p['cni_b']} | {p['n_a']} | "
-            f"{p['n_b']} | {p['n_right_censored_a']} | {p['n_right_censored_b']} | "
+            f"| {p['churn_rate_per_min']} | {p['policy_at']} | {p['cni_a']} vs {p['cni_b']} | "
+            f"{p['n_a']} | {p['n_b']} | {p['n_right_censored_a']} | {p['n_right_censored_b']} | "
             f"{p['n_left_censored_a']} | {p['n_left_censored_b']} | "
             f"{p['p_raw']:.3g} | {p['p_adj']:.3g} |"
         )

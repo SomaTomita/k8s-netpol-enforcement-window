@@ -104,8 +104,8 @@ def main(argv: list[str]) -> int:
             print(f"{d}: cannot evaluate this trial: {e}", file=sys.stderr)
             return 1
     summary_rows = summarize(results)
-    churn_levels = sorted({row["churn_rate_per_min"] for row in summary_rows})
-    pairwise_rows = [pairwise_cni(results, churn) for churn in churn_levels]
+    conditions = sorted({(row["churn_rate_per_min"], row["policy_at"]) for row in summary_rows})
+    pairwise_rows = [pairwise_cni(results, churn, policy_at) for churn, policy_at in conditions]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(
