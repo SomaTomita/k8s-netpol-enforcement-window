@@ -94,13 +94,15 @@ def test_pending_skips_completed_trials(tmp_path: Path):
 
 
 def test_trial_env_is_explicit():
-    r = Run("run-0001-003", "antrea", 60, "p", 3)
+    r = Run("run-0001-003", "antrea", 60, "p", 3, policy_at="at-ready")
     env = trial_env(r, raw_root=Path("data/raw/exp1"), duration_s=30)
     assert env == {
         "CNI": "antrea",
         "RUN_ID": "run-0001-003",
         "RUN_DIR": "data/raw/exp1/run-0001-003",
         "DURATION": "30",
+        "POLICY_AT": "at-ready",
+        "POLICY_DELAY_MS": "0",
     }
 
 
@@ -118,6 +120,22 @@ def test_write_meta_records_frozen_parameters(tmp_path: Path):
     meta = json.loads((tmp_path / "meta.json").read_text())
     assert meta["cni"] == "cilium" and meta["churn_rate_per_min"] == 10 and meta["sustained_k"] == 3
     assert meta["background_churn_per_min"] == 9
+
+
+def test_write_meta_records_policy_at(tmp_path: Path):
+    r = Run("run-0000-000", "cilium", 1, "default-deny-ingress", 0, policy_at="with-victim")
+    write_meta(
+        tmp_path,
+        r,
+        cni_version="1.20.0",
+        k=3,
+        probe_interval_ns=1_000_000,
+        dial_timeout_ns=200_000_000,
+        duration_s=30,
+    )
+    meta = json.loads((tmp_path / "meta.json").read_text())
+    assert meta["policy_at"] == "with-victim"
+    assert meta["background_churn_per_min"] == 0
 
 
 def test_write_meta_overwrites_a_stale_attempt(tmp_path: Path):

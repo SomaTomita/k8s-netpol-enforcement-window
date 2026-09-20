@@ -78,6 +78,8 @@ class Trial:
     observations: list[dict[str, Any]]
     t_ready_c_ns: int
     t_ready_b_ns: int
+    policy_at: str
+    policy_apply_issued_ns: int | None
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,27 @@ class TrialResult:
     excluded_reason: str | None
     probe_interval_ns: int
 
+    # Experiment 1b (experiments/exp1b-ordering/preregistration.md).
+    # `policy_at` is the arm; `policy_apply_issued_ns` the instant
+    # scripts/trial.sh issued the one policy apply. Both are absent from
+    # Experiment 1's trials and default accordingly.
+    #
+    # `enforcement_latency_ns` is `t_blocked - policy_apply_issued_ns`:
+    # how long the CNI took from being asked to enforce to actually
+    # enforcing. It shares `t_blocked` with `window_ns`, so it shares the
+    # same censoring: on a left-censored trial it is a floor, not a
+    # latency, and `npw.analysis.latency` refuses to average it there.
+    # `None` when right-censored or when no apply time was recorded.
+    #
+    # `head_start_ns` is `t_ready_c_ns - policy_apply_issued_ns`: how long
+    # the CNI had before the Pod was ready. Positive in `before` and
+    # `with-victim`, negative in `at-ready`. Recorded so the ordering is a
+    # measured fact per trial rather than a label.
+    policy_at: str = "before"
+    policy_apply_issued_ns: int | None = None
+    enforcement_latency_ns: int | None = None
+    head_start_ns: int | None = None
+
 
 def _jsonl(path: Path) -> list[dict[str, Any]]:
     """Parse a JSONL file, skipping blank lines.
@@ -189,13 +212,38 @@ def load_trial(run_dir: Path) -> Trial:
     Fails clearly (via `ValueError`, naming the offending path) on the
     ways a real trial directory can violate what this module needs: a
     victim.jsonl/cri.jsonl without exactly one matching B/C record, a
-    malformed JSONL line, or a prober.jsonl whose offsets are not
-    ascending. A missing/malformed meta.json key raises a `KeyError`
-    naming that key -- every key read here is written unconditionally by
+    malformed JSONL line, a prober.jsonl whose offsets are not ascending,
+    or a trial.json whose `policy_at` contradicts meta.json's. A
+    missing/malformed meta.json key raises a `KeyError` naming that key
+    -- every key read here is written unconditionally by
     `runner.write_meta`, so this only fires on a hand-edited or
     otherwise corrupt meta.json.
+
+    The `policy_at` cross-check is what makes the arm label a measured
+    fact rather than an assumed one (ADR 0004: "the ordering is measured,
+    not assumed"). meta.json records the runner's *intent*; trial.json
+    records what `scripts/trial.sh` actually did. Where both exist they
+    must agree, or the trial is mislabelled and every derived quantity
+    grouped by arm is wrong.
     """
     meta = json.loads((run_dir / "meta.json").read_text())
+    # trial.json is written by scripts/trial.sh and is absent from the
+    # synthetic fixtures older tests build; both it and its policy fields
+    # are optional here so an Experiment 1 directory loads unchanged.
+    trial_json_path = run_dir / "trial.json"
+    trial_json = json.loads(trial_json_path.read_text()) if trial_json_path.exists() else {}
+    issued = trial_json.get("policy_apply_issued_ns")
+    policy_at = str(meta.get("policy_at", "before"))
+    ran_policy_at = trial_json.get("policy_at")
+    # Experiment 1's 270 trials have a trial.json without this key (the
+    # field postdates them), and the synthetic fixtures have no trial.json
+    # at all; both stay legal. Only a disagreement is an error.
+    if ran_policy_at is not None and str(ran_policy_at) != policy_at:
+        raise ValueError(
+            f"{trial_json_path}: policy_at is {str(ran_policy_at)!r}, but meta.json says "
+            f"{policy_at!r} -- the arm the runner intended and the arm scripts/trial.sh "
+            "actually ran disagree, so the trial's arm label is not a measurement"
+        )
     c = _one_t_ready_record(run_dir / "victim.jsonl", "C")
     b = _one_t_ready_record(run_dir / "cri.jsonl", "B")
     observations = _jsonl(run_dir / "prober.jsonl")
@@ -215,6 +263,8 @@ def load_trial(run_dir: Path) -> Trial:
         observations=observations,
         t_ready_c_ns=int(c["offset_ns"]),
         t_ready_b_ns=int(b["offset_ns"]),
+        policy_at=policy_at,
+        policy_apply_issued_ns=int(issued) if issued is not None else None,
     )
 
 
@@ -282,6 +332,15 @@ def evaluate(t: Trial) -> TrialResult:
         for o in post_ready
     )
 
+    if t.policy_apply_issued_ns is None:
+        enforcement_latency_ns = None
+        head_start_ns = None
+    else:
+        enforcement_latency_ns = (
+            t_blocked - t.policy_apply_issued_ns if t_blocked is not None else None
+        )
+        head_start_ns = t.t_ready_c_ns - t.policy_apply_issued_ns
+
     return TrialResult(
         run_id=t.run_id,
         cni=t.cni,
@@ -296,4 +355,8 @@ def evaluate(t: Trial) -> TrialResult:
         b_c_flagged=b_c_flagged,
         excluded_reason=excluded_reason,
         probe_interval_ns=t.probe_interval_ns,
+        policy_at=t.policy_at,
+        policy_apply_issued_ns=t.policy_apply_issued_ns,
+        enforcement_latency_ns=enforcement_latency_ns,
+        head_start_ns=head_start_ns,
     )

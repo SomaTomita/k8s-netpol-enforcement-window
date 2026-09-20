@@ -189,3 +189,44 @@ tasks:
     desc: 'Evaluate data/raw/exp1 into data/processed/exp1 (reads raw, never writes to it)'
     cmds:
       - uv run python -m npw.analysis.report_cli data/raw/exp1 data/processed/exp1
+
+  exp1b:run:
+    desc: 'Run all pending Experiment 1b main-run trials (policy-timing arms) for one CNI against a running cluster (task exp1b:run CNI=calico; for the pilot use exp1b:pilot, not an override of this task)'
+    vars:
+      CNI_VERSION: '{{.CNI_VERSION | default .CNI_VERSION_DEFAULT}}'
+      MATRIX: '{{.MATRIX | default "experiments/exp1b-ordering/matrix.yaml"}}'
+      RAW_ROOT: '{{.RAW_ROOT | default "data/raw/exp1b"}}'
+    cmds:
+      - docker build -q -t netpol-window/prober:dev -f cmd/prober/Dockerfile .
+      - docker build -q -t netpol-window/victim:dev -f cmd/victim/Dockerfile .
+      - kind load docker-image netpol-window/prober:dev netpol-window/victim:dev --name {{.CLUSTER_NAME}}
+      - uv run python -m npw.runner --matrix {{.MATRIX}} --raw-root {{.RAW_ROOT}} --cni {{.CNI}} --cni-version {{.CNI_VERSION}} {{.CLI_ARGS}}
+
+  # A task of its own rather than an override of exp1b:run, because MATRIX
+  # and RAW_ROOT must not be able to come apart. The pilot matrix expands
+  # to run-0000-000..002 and run-0001-000..002 -- exactly the run ids of
+  # the main matrix's first three repetitions of the two Cilium arms -- so
+  # a pilot launched with MATRIX set and RAW_ROOT forgotten would write six
+  # pilot trials into data/raw/exp1b under the ids the main run expects,
+  # with a byte-identical meta.json. pending() would then skip those
+  # repetitions permanently and nothing downstream could tell the pooled
+  # trials apart. The pre-registration requires the pilot never be pooled
+  # with the main run; setting both variables here makes that a property of
+  # the task instead of something to remember at the command line.
+  exp1b:pilot:
+    desc: 'Run the Experiment 1b pilot (Cilium, 3 repetitions per arm) into data/raw/exp1b-pilot -- never into the main raw root'
+    cmds:
+      - task: exp1b:run
+        vars:
+          MATRIX: experiments/exp1b-ordering/pilot-matrix.yaml
+          RAW_ROOT: data/raw/exp1b-pilot
+
+  exp1b:analyze:
+    desc: 'Evaluate data/raw/exp1b into data/processed/exp1b (reads raw, never writes to it)'
+    cmds:
+      - uv run python -m npw.analysis.report_cli data/raw/exp1b data/processed/exp1b
+
+  gaps:
+    desc: 'Scan a raw root for inter-observation gaps that mean the host slept (task gaps -- data/raw/exp1b)'
+    cmds:
+      - uv run python -m npw.gaps {{.CLI_ARGS}}

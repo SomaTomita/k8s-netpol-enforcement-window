@@ -34,6 +34,7 @@ def _tr(
     b_c_flagged=False,
     excluded_reason=None,
     probe_interval_ns=1 * MS,
+    policy_at="before",
 ):
     """One TrialResult, keyword-only at the call site for readability."""
     return TrialResult(
@@ -50,6 +51,7 @@ def _tr(
         b_c_flagged=b_c_flagged,
         excluded_reason=excluded_reason,
         probe_interval_ns=probe_interval_ns,
+        policy_at=policy_at,
     )
 
 
@@ -653,3 +655,40 @@ def test_rendered_summary_table_carries_the_negative_window_column():
     body = next(line for line in md.splitlines() if line.startswith("| cilium |"))
     assert "neg. window" in header
     assert header.count("|") == separator.count("|") == body.count("|")
+
+
+def test_summarize_splits_conditions_by_policy_at():
+    results = [
+        _tr(rep=0, window_ns=300 * MS, policy_at="at-ready"),
+        _tr(rep=1, window_ns=310 * MS, policy_at="at-ready"),
+        _tr(rep=2, window_ns=5 * MS, censored=True, policy_at="with-victim"),
+    ]
+    rows = summarize(results)
+    assert [(r["cni"], r["churn_rate_per_min"], r["policy_at"], r["n"]) for r in rows] == [
+        ("cilium", 1, "at-ready", 2),
+        ("cilium", 1, "with-victim", 1),
+    ]
+    assert rows[0]["estimate_kind"] == "point"
+    assert rows[1]["estimate_kind"] == "upper_bound"
+
+
+def test_summarize_rows_default_policy_at_before_for_exp1_results():
+    rows = summarize([_tr(rep=0), _tr(rep=1)])
+    assert rows[0]["policy_at"] == "before"
+
+
+def test_pairwise_only_compares_the_requested_policy_at():
+    results = [
+        _tr(cni="cilium", rep=0, window_ns=100 * MS, policy_at="at-ready"),
+        _tr(cni="calico", rep=0, window_ns=900 * MS, policy_at="at-ready"),
+        _tr(cni="antrea", rep=0, window_ns=500 * MS, policy_at="with-victim"),
+    ]
+    rows = pairwise_cni(results, churn_rate_per_min=1, policy_at="at-ready")
+    assert [(r["cni_a"], r["cni_b"], r["policy_at"]) for r in rows] == [("calico", "cilium", "at-ready")]
+
+
+def test_render_markdown_shows_the_policy_at_column():
+    rows = summarize([_tr(rep=0, policy_at="at-ready"), _tr(rep=1, policy_at="at-ready")])
+    md = render_markdown(rows, [pairwise_cni([_tr(rep=0, policy_at="at-ready")], 1, "at-ready")])
+    assert "| policy at |" in md
+    assert "| cilium | 1 | at-ready |" in md

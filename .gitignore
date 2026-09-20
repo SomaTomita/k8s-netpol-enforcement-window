@@ -29,6 +29,33 @@ data/processed/**
 !data/**/.gitkeep
 !data/**/*.sha256
 
+# ...except developer scratch, which is a record of nothing: scripts/
+# collect.sh and the trial-script smoke runs write throwaway trials into
+# data/raw/dev/, and the negation above would otherwise make each one's
+# checksums.sha256 committable. A later pattern wins, so this re-ignores
+# the whole directory.
+data/raw/dev/
+
+# ...but the instrument-check trial the Experiment 1b pre-registration
+# cites for its H2 threshold must stay auditable, on the same rule as every
+# other trial: its checksum is committed, its stream is not. git prunes an
+# excluded directory from traversal entirely, so re-including a file two
+# levels down means re-opening (and re-closing) every level in between —
+# see gitignore(5), "It is not possible to re-include a file if a parent
+# directory of that file is excluded".
+#
+# Two dev checksums are tracked, not one. The negations below re-include
+# exactly one, smoke-with-victim's; data/raw/dev/dev-20260919-012023/
+# checksums.sha256 is tracked because it was committed before the
+# data/raw/dev/ rule above existed, and .gitignore never untracks a file
+# already in the index. Taking it out of the index is a separate decision
+# from what this file can express.
+!data/raw/dev/
+data/raw/dev/*
+!data/raw/dev/smoke-with-victim/
+data/raw/dev/smoke-with-victim/*
+!data/raw/dev/smoke-with-victim/checksums.sha256
+
 # editor / OS
 .DS_Store
 .idea/

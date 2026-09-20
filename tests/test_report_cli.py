@@ -12,25 +12,24 @@ from npw.analysis.report_cli import main
 MS = 1_000_000
 
 
-def _trial_dir(root, run_id, cni, churn, prober, c_ns=500, b_ns=400, complete=True):
+def _trial_dir(root, run_id, cni, churn, prober, c_ns=500, b_ns=400, complete=True, policy_at=None):
     """Write one trial directory in the layout scripts/trial.sh produces."""
     d = root / run_id
     d.mkdir(parents=True)
     (d / "prober.jsonl").write_text("".join(json.dumps(o) + "\n" for o in prober))
     (d / "victim.jsonl").write_text(json.dumps({"offset_ns": c_ns, "t_ready_method": "C"}) + "\n")
     (d / "cri.jsonl").write_text(json.dumps({"offset_ns": b_ns, "t_ready_method": "B"}) + "\n")
-    (d / "meta.json").write_text(
-        json.dumps(
-            {
-                "run_id": run_id,
-                "cni": cni,
-                "churn_rate_per_min": churn,
-                "repetition": 0,
-                "sustained_k": 3,
-                "probe_interval_ns": MS,
-            }
-        )
-    )
+    meta = {
+        "run_id": run_id,
+        "cni": cni,
+        "churn_rate_per_min": churn,
+        "repetition": 0,
+        "sustained_k": 3,
+        "probe_interval_ns": MS,
+    }
+    if policy_at is not None:
+        meta["policy_at"] = policy_at
+    (d / "meta.json").write_text(json.dumps(meta))
     if complete:
         # trial.sh writes checksums.sha256 last: its presence is what marks
         # a trial complete (mirrors npw.runner.pending).
@@ -138,3 +137,29 @@ def test_main_fails_clearly_on_a_corrupt_trial_directory(tmp_path, capsys):
 def test_main_fails_on_wrong_argument_count(capsys):
     assert main([]) != 0
     assert "usage" in capsys.readouterr().err.lower()
+
+
+def test_main_writes_latency_csv_and_appends_it_to_the_markdown(tmp_path):
+    raw = tmp_path / "raw"
+    out = tmp_path / "processed"
+    _trial_dir(raw, "run-0000-000", "cilium", 1, _allowed_then_blocked(), policy_at="at-ready")
+    assert main([str(raw), str(out)]) == 0
+    assert (out / "latency.csv").exists()
+    assert "## Enforcement latency" in (out / "summary.md").read_text()
+
+
+def test_main_groups_pairwise_by_churn_and_policy_at(tmp_path):
+    raw = tmp_path / "raw"
+    out = tmp_path / "processed"
+    _trial_dir(raw, "run-0000-000", "cilium", 1, _allowed_then_blocked(), policy_at="at-ready")
+    _trial_dir(raw, "run-0000-001", "calico", 1, _allowed_then_blocked(), policy_at="at-ready")
+    _trial_dir(raw, "run-0001-000", "cilium", 1, _allowed_then_blocked(), policy_at="with-victim")
+
+    assert main([str(raw), str(out)]) == 0
+    summary = list(csv.DictReader((out / "summary.csv").open()))
+    assert {(r["cni"], r["policy_at"]) for r in summary} == {
+        ("cilium", "at-ready"), ("calico", "at-ready"), ("cilium", "with-victim")
+    }
+    pairwise = list(csv.DictReader((out / "pairwise.csv").open()))
+    # with-victim has one CNI only -> no pair; at-ready has two -> one pair.
+    assert [(r["policy_at"], r["cni_a"], r["cni_b"]) for r in pairwise] == [("at-ready", "calico", "cilium")]

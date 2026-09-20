@@ -113,12 +113,33 @@ def pending(runs: list[Run], raw_root: Path) -> list[Run]:
 
 
 def trial_env(run: Run, raw_root: Path, duration_s: int) -> dict[str, str]:
-    """The exact four env vars scripts/trial.sh reads. No more, no fewer."""
+    """The exact six env vars scripts/trial.sh reads. No more, no fewer.
+
+    `POLICY_AT` selects when trial.sh applies the NetworkPolicy relative
+    to the victim (see that script's header). It is always passed, even
+    for Experiment 1's `before`, so the script never has to guess from an
+    unset variable which experiment it is running.
+
+    `POLICY_DELAY_MS` is pinned to 0 rather than left unset. `main` runs
+    trial.sh with `{**os.environ, **trial_env(...)}`, so anything not set
+    here is inherited from whoever started the run -- and a delay exported
+    during a positive-control session (`scripts/positive-control.sh` is
+    `POLICY_AT=at-ready POLICY_DELAY_MS=2000`) would then be accepted by
+    trial.sh on the `at-ready` arm, silently contradicting the
+    `POLICY_DELAY_MS = 0` that `experiments/exp1b-ordering/matrix.yaml`
+    freezes for it. Pinning it closes the environment against a stale
+    export instead of leaving a frozen protocol parameter to chance. If a
+    future experiment needs a non-zero delay, it becomes a `Run` field
+    then, varied by the matrix like every other frozen parameter -- never
+    an ambient environment variable.
+    """
     return {
         "CNI": run.cni,
         "RUN_ID": run.run_id,
         "RUN_DIR": str(raw_root / run.run_id),
         "DURATION": str(duration_s),
+        "POLICY_AT": run.policy_at,
+        "POLICY_DELAY_MS": "0",
     }
 
 
@@ -170,6 +191,7 @@ def write_meta(
         "cni": run.cni,
         "cni_version": cni_version,
         "policy_set": run.policy_set,
+        "policy_at": run.policy_at,
         "churn_rate_per_min": run.churn_rate_per_min,
         "background_churn_per_min": background_rate(run.churn_rate_per_min),
         "repetition": run.repetition,

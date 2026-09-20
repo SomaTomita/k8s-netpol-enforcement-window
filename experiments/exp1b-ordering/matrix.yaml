@@ -1,0 +1,26 @@
+# Frozen experiment matrix for Experiment 1b (policy timing).
+# Mirrors experiments/exp1b-ordering/preregistration.md 1:1 — any change
+# here without a dated addendum there is a protocol violation.
+#
+# `policy_at` is the independent variable (src/npw/matrix.py
+# POLICY_AT_VALUES; scripts/trial.sh POLICY_AT). `before` is not listed:
+# Experiment 1 (data/raw/exp1, 270 trials) is the reference arm and is
+# not re-run. Churn is fixed at 1/min — no background Pods — because
+# Experiment 1 showed churn moves the first-look floor by under 2 ms.
+
+cni:
+  - cilium   # 1.20.0
+  - calico   # v3.32.2
+  - antrea   # 2.7.0
+
+churn_rate_per_min:
+  - 1
+
+policy_set:
+  - default-deny-ingress
+
+policy_at:
+  - with-victim   # policy applied immediately after the victim Deployment's apply returns
+  - at-ready      # policy applied the instant candidate C is observed (POLICY_DELAY_MS=0)
+
+repetitions: 30
