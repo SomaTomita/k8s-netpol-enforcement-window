@@ -29,6 +29,13 @@ data/processed/**
 !data/**/.gitkeep
 !data/**/*.sha256
 
+# ...except developer scratch, which is a record of nothing: scripts/
+# collect.sh and the trial-script smoke runs write throwaway trials into
+# data/raw/dev/, and the negation above would otherwise make each one's
+# checksums.sha256 committable. A later pattern wins, so this re-ignores
+# the whole directory.
+data/raw/dev/
+
 # editor / OS
 .DS_Store
 .idea/

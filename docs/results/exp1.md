@@ -119,10 +119,13 @@ Four trials were collected while the host entered a macOS "Maintenance
 Sleep" state mid-measurement, producing inter-observation gaps of 4.8 to
 68.7 minutes against a 200 ms dial timeout. They are not measurements and
 were moved to `data/raw/exp1-failed/<run_id>/`, each with a `REASON.md`
-recording the cause, the `pmset -g log` evidence and the gap size. Like
-the rest of `data/raw/`, those directories are not committed — only
-per-trial checksums are — so the record that survives in this repository
-is this table and preregistration Addendum 4:
+recording the cause, the `pmset -g log` evidence and the gap size. Their
+`checksums.sha256` are committed, on the same rule as the 270 kept trials,
+so a reader can verify the discarded streams are still the ones described
+here; the streams and the `REASON.md` files themselves stay local, as all
+of `data/raw/` does. The discard is therefore auditable exactly as the
+kept data is, and this table and preregistration Addendum 4 carry the
+reasons:
 
 | run_id | observed gap |
 |---|---|
