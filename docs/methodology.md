@@ -170,6 +170,38 @@ How each is carried into a reported statistic is frozen per experiment;
 for Experiment 1 see `experiments/exp1-window/preregistration.md`,
 Addendum 1.
 
+## Policy timing
+
+Experiment 1 applies the NetworkPolicy before the victim Deployment
+exists. Experiment 1b (`experiments/exp1b-ordering/`) makes the apply
+instant an independent variable, `policy_at`, with three values —
+`before`, `with-victim` (immediately after the victim's apply returns),
+`at-ready` (the instant candidate C is observed, plus an optional delay)
+— implemented in one place, `scripts/trial.sh`, and recorded per trial:
+
+- `t_policy_issued` (`trial.json` `policy_apply_issued_ns`): the instant
+  before `kubectl apply` is invoked. Enforcement latency is measured from
+  here so that the API round-trip is inside it, as it is for an operator.
+- `t_policy_returned` (`policy_apply_returned_ns`): the instant the apply
+  returned, so the API part can be separated afterwards.
+
+Two derived quantities join `window`:
+
+```
+L          = t_blocked  - t_policy_issued     enforcement latency
+head_start = t_ready    - t_policy_issued     how long the CNI had before readiness
+```
+
+`L` shares `t_blocked` with `window` and therefore shares its censoring.
+On a left-censored trial `L` is a floor, not a latency; the analysis
+counts such trials and does not average them (`npw.analysis.latency`).
+`head_start` is positive when the policy preceded readiness and negative
+in the `at-ready` arm; it is reported so the ordering under test is a
+measured fact per trial, not a label. A `window` that is positive
+because `head_start` is negative is the late-policy case (the shape of
+CVE-2024-7598), and is reported as such, not as a Pod having started
+unprotected.
+
 ## Clocks
 
 All per-observation timing in this project uses a monotonic clock (Go's

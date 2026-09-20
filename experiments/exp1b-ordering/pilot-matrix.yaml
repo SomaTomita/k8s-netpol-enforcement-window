@@ -1,0 +1,19 @@
+# Pilot for Experiment 1b: Cilium only, 3 repetitions per arm (6 trials),
+# written to data/raw/exp1b-pilot and NEVER pooled with the main run.
+# Purpose: confirm scripts/trial.sh completes both arms and the at-ready
+# arm yields an uncensored window (preregistration.md, Pilot).
+
+cni:
+  - cilium
+
+churn_rate_per_min:
+  - 1
+
+policy_set:
+  - default-deny-ingress
+
+policy_at:
+  - with-victim
+  - at-ready
+
+repetitions: 3
