@@ -11,6 +11,27 @@ Kubernetes' own docs acknowledge that a Pod "may be started unprotected"
 before NetworkPolicy handling completes. This project measures how large
 that window actually is, across CNI implementations, under Pod churn.
 
+## Results
+
+**Experiment 1 (2026-09-20, 270 trials).** Across Cilium 1.20.0, Calico
+v3.32.2 and Antrea 2.7.0, at 1, 10 and 60 Pod creations per minute, 30
+repetitions each: no trial witnessed an `Allowed` → `Blocked` transition
+after the victim became Ready. Every trial was left-censored — traffic
+was already blocked at the harness's first look.
+
+That is an **upper bound, not a measurement**: the window, if one exists
+under this configuration, is shorter than the harness could see. The
+per-cell bound ranges from <= 5.97 ms (Cilium, 1/min) to <= 9.48 ms
+(Calico, 60/min). Zero trials were excluded, zero right-censored, zero
+produced a negative window.
+
+A positive control that imposes a 2000 ms window by construction recovers
+2307.0 / 2250.0 / 2224.4 ms on the three CNIs, so the censored result
+reflects the phenomenon's speed rather than a blind instrument.
+
+Full numbers, scope limits and the reasons this does *not* show that no
+window exists: [`docs/results/exp1.md`](docs/results/exp1.md).
+
 ## Quick start
 
 ```bash
@@ -50,6 +71,8 @@ in that directory (requires `pip install diagrams` and Graphviz).
 
 - [`docs/methodology.md`](docs/methodology.md) — read this first. Defines
   what is actually being measured.
+- [`docs/results/exp1.md`](docs/results/exp1.md) — Experiment 1's numbers,
+  its positive control, and what the result does and does not establish.
 - [`docs/related-work.md`](docs/related-work.md) — literature basis for
   the research gap.
 - [`docs/adr/`](docs/adr/) — architecture decisions and their rationale.

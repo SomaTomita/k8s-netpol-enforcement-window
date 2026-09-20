@@ -835,3 +835,66 @@ rare (1 of 12 live trials across the pilot and this positive control:
 this fix — silently indistinguishable from a genuine left-censored
 result at the analysis layer. Task 12's full run proceeds on the
 corrected code.
+
+---
+
+## Addendum 4 — 2026-09-20: Task 12's full run, outcome
+
+Appended after the run, per the append-only policy above. No analysis
+choice below was changed after seeing the data; the protocol is the one
+frozen in Addendum 1 and corrected in Addendum 3.
+
+**What was run.** 270 trials: Cilium 1.20.0, Calico v3.32.2 and Antrea
+2.7.0 × churn 1, 10, 60 Pod creations/min × 30 repetitions, `k` = 3,
+`p` = 1 ms, single-node kind, one CNI per cluster, cluster torn down
+and rebuilt between CNIs. Every trial's `checksums.sha256` verifies.
+
+**Outcome.** All 270 trials are left-censored. 0 excluded, 0
+right-censored, 0 negative windows (the Addendum 3 fix holding), probe
+error rate 0.0000 throughout. Per-cell median first-look floors run from
+<= 5.97 ms (Cilium, 1/min) to <= 9.48 ms (Calico, 60/min); over all 270
+trials the floor distribution is min 1.01, median 7.73, p95 18.38, max
+194.21 ms. Full tables and interpretation: `docs/results/exp1.md`.
+
+**The pre-registered pairwise test is uninformative, and is reported
+anyway.** Mann-Whitney U per churn level with Holm-Bonferroni across the
+three pairs returns p = 1 for all nine comparisons. That is the expected
+return when every observation on both sides is tied at its censoring
+floor; it is not evidence that the three CNIs behave identically. It is
+reported rather than dropped because Addendum 1 fixed it in advance, and
+dropping a pre-registered test because its result is uninteresting is
+exactly the practice pre-registration exists to prevent.
+
+**Four trials were discarded for a host-level fault, and re-collected.**
+On 2026-09-20 the host entered a macOS "Maintenance Sleep" state during
+the Cilium block, suspending four trials mid-measurement
+(`run-0000-022`, `run-0001-021`, `run-0001-022`, `run-0002-021`;
+inter-observation gaps 285 127.8 ms to 4 119 386.7 ms against a 200 ms
+dial timeout). These are not measurements of anything. Per the
+repository's data-immutability rule they were moved to
+`data/raw/exp1-failed/<run_id>/` with a `REASON.md` each, not deleted,
+and `npw.runner.pending()` re-offered their conditions so fresh trials
+were collected. The 270 analysed are 270 complete trials. `data/raw/` is
+not committed, so those `REASON.md` files live only alongside the raw
+streams they describe; their substance is reproduced here and in
+`docs/results/exp1.md` so the discard is on the public record. Remediation:
+`caffeinate -s -i -d -m -u` held for the remainder of the run; the
+earlier `caffeinate -i -t 300` covered idle sleep only. Every subsequent
+trial was scanned for inter-observation gaps over 5 s — the largest gap
+among the 270 is 616.5 ms.
+
+This is a host-environment exclusion, not an analysis-time one: it is
+decided by the presence of a multi-minute gap in the observation stream,
+a criterion that cannot be satisfied by any legitimate trial, and it is
+recorded here so the count reconciles against `data/raw/exp1-failed/`.
+
+**Interpretation, stated as a bound.** Per `docs/methodology.md`
+(Observation resolution), a left-censored trial's recorded value is the
+harness's own first-look floor — an upper bound on the true window, "a
+different quantity from the observation floor `p`", and it "must not be
+reported as 'no window above the floor'". Experiment 1 therefore
+establishes that under policy-first ordering on a single-node kind
+cluster the window is below a few-millisecond bound on all three CNIs,
+and does not establish its size or its absence. The positive control
+(Addendum 3) is what licenses reading the censoring as the phenomenon's
+speed rather than as an instrument failure.
