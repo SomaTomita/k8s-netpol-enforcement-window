@@ -67,7 +67,6 @@ data/raw/dev/smoke-with-victim/*
 skills-lock.json
 
 # local-only: names the specific institution, not for public git history
-AI-USAGE.md
 
 # local-only: thesis-strategy / novelty-decision working notes, not project docs
 docs/novelty-recheck-notes.md
