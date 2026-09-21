@@ -26,10 +26,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # repo-token makes the release lookup an authenticated API call.
+      # Without it the three matrix jobs resolve the same release at the
+      # same moment, unauthenticated, from the runner's shared egress IP,
+      # and hit the 60/hour limit: on PR #11 the antrea job died in 6s
+      # with "API rate limit exceeded" before Install kind or Smoke ran,
+      # while calico and cilium passed in the same workflow run. A red
+      # tick that says nothing about the code is worse than a slow one.
+      # helm/kind-action below has no equivalent input (see #14).
       - name: Set up Task
         uses: arduino/setup-task@v3.0.0
         with:
           version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       # install_only skips cluster creation here — task cluster:up creates
       # the cluster itself with the repo's own per-CNI kind config.
