@@ -1,0 +1,8 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: npw-antrea
+networking:
+  disableDefaultCNI: true
+  # kube-proxy kept (kind default). Antrea's proxyAll mode is not enabled.
+nodes:
+  - role: control-plane
