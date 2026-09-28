@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "run_id": "run-0001-021",
+  "cni": "cilium",
+  "cni_version": "1.20.0",
+  "policy_set": "default-deny-ingress",
+  "policy_at": "at-ready",
+  "churn_rate_per_min": 1,
+  "background_churn_per_min": 0,
+  "repetition": 21,
+  "sustained_k": 3,
+  "probe_interval_ns": 1000000,
+  "dial_timeout_ns": 200000000,
+  "duration_s": 30
+}

@@ -1,0 +1,1 @@
+{"run_epoch_ns": 1789888352203644000, "namespace": "t-run-0003-020", "node": "npw-calico-control-plane", "victim_restart_count": 0, "t_ready_b_ns": 2606679800, "t_ready_c_ns": 2610877300, "b_c_skew_ns": -4197500, "warnings": []}

@@ -1,0 +1,11 @@
+churn: failed to create churn-0070 in t-run-0005-026 at ts=1789889720.291109 (kubectl exit 1): Error from server (Forbidden): pods "churn-0070" is forbidden: unable to create new content in namespace t-run-0005-026 because it is being terminated
+churn: failed to create churn-0071 in t-run-0005-026 at ts=1789889721.308721 (kubectl exit 1): Error from server (Forbidden): pods "churn-0071" is forbidden: unable to create new content in namespace t-run-0005-026 because it is being terminated
+churn: failed to create churn-0072 in t-run-0005-026 at ts=1789889722.306408 (kubectl exit 1): Error from server (Forbidden): pods "churn-0072" is forbidden: unable to create new content in namespace t-run-0005-026 because it is being terminated
+churn: failed to create churn-0073 in t-run-0005-026 at ts=1789889723.330818 (kubectl exit 1): Error from server (Forbidden): pods "churn-0073" is forbidden: unable to create new content in namespace t-run-0005-026 because it is being terminated
+churn: failed to create churn-0074 in t-run-0005-026 at ts=1789889724.359567 (kubectl exit 1): Error from server (Forbidden): pods "churn-0074" is forbidden: unable to create new content in namespace t-run-0005-026 because it is being terminated
+churn: failed to create churn-0075 in t-run-0005-026 at ts=1789889725.394047 (kubectl exit 1): Error from server (Forbidden): pods "churn-0075" is forbidden: unable to create new content in namespace t-run-0005-026 because it is being terminated
+churn: failed to delete churn-0060 in t-run-0005-026 (kubectl exit 1): Error from server (NotFound): pods "churn-0060" not found
+churn: failed to create churn-0076 in t-run-0005-026 at ts=1789889726.442869 (kubectl exit 1): Error from server (NotFound): namespaces "t-run-0005-026" not found
+churn: failed to delete churn-0061 in t-run-0005-026 (kubectl exit 1): Error from server (NotFound): pods "churn-0061" not found
+churn: namespace=t-run-0005-026 scheduled=945 attempted=77 created=70 create_failed=7 deleted=60 delete_failed=2 cut_short=true elapsed_s=77.466874 first_create_ts=1789889649.103427 last_create_ts=1789889719.288540
+runner: churn rate configured_per_min=59 achieved_per_min=54.217 (recorded, not a pass/fail criterion; see npw.runner.achieved_rate_per_min)

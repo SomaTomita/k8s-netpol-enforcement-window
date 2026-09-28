@@ -1,0 +1,3 @@
+churn: failed to create churn-0011 in t-run-0004-010 at ts=1789886506.650750 (kubectl exit 1): Error from server (Forbidden): pods "churn-0011" is forbidden: unable to create new content in namespace t-run-0004-010 because it is being terminated
+churn: namespace=t-run-0004-010 scheduled=145 attempted=12 created=11 create_failed=1 deleted=9 delete_failed=0 cut_short=true elapsed_s=78.007316 first_create_ts=1789886433.292589 last_create_ts=1789886499.971611
+runner: churn rate configured_per_min=9 achieved_per_min=8.461 (recorded, not a pass/fail criterion; see npw.runner.achieved_rate_per_min)

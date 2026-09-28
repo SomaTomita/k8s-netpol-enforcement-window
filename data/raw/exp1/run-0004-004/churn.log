@@ -1,0 +1,4 @@
+churn: failed to create churn-0011 in t-run-0004-004 at ts=1789885337.244590 (kubectl exit 1): Error from server (NotFound): namespaces "t-run-0004-004" not found
+churn: failed to delete churn-0008 in t-run-0004-004 (kubectl exit 1): Error from server (NotFound): pods "churn-0008" not found
+churn: namespace=t-run-0004-004 scheduled=145 attempted=12 created=11 create_failed=1 deleted=8 delete_failed=1 cut_short=true elapsed_s=73.486439 first_create_ts=1789885263.837433 last_create_ts=1789885330.535297
+runner: churn rate configured_per_min=9 achieved_per_min=8.981 (recorded, not a pass/fail criterion; see npw.runner.achieved_rate_per_min)

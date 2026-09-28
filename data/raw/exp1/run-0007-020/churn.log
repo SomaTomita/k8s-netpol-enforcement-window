@@ -1,0 +1,2 @@
+churn: namespace=t-run-0007-020 scheduled=145 attempted=11 created=11 create_failed=0 deleted=8 delete_failed=0 cut_short=true elapsed_s=73.278565 first_create_ts=1789894446.418258 last_create_ts=1789894513.134967
+runner: churn rate configured_per_min=9 achieved_per_min=9.007 (recorded, not a pass/fail criterion; see npw.runner.achieved_rate_per_min)

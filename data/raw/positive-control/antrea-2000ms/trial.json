@@ -1,0 +1,1 @@
+{"run_epoch_ns": 1789857896550318000, "namespace": "t-pc-antrea-2000ms", "node": "npw-antrea-control-plane", "instrument_check": "positive-control", "imposed_delay_ms": 2000.0, "t_ready_c_ns": 2660470138}

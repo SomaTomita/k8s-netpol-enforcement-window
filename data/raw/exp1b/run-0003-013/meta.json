@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "run_id": "run-0003-013",
+  "cni": "calico",
+  "cni_version": "v3.32.2",
+  "policy_set": "default-deny-ingress",
+  "policy_at": "at-ready",
+  "churn_rate_per_min": 1,
+  "background_churn_per_min": 0,
+  "repetition": 13,
+  "sustained_k": 3,
+  "probe_interval_ns": 1000000,
+  "dial_timeout_ns": 200000000,
+  "duration_s": 30
+}

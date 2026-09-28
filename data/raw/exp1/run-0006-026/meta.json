@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "run_id": "run-0006-026",
+  "cni": "antrea",
+  "cni_version": "2.7.0",
+  "policy_set": "default-deny-ingress",
+  "churn_rate_per_min": 1,
+  "background_churn_per_min": 0,
+  "repetition": 26,
+  "sustained_k": 3,
+  "probe_interval_ns": 1000000,
+  "dial_timeout_ns": 200000000,
+  "duration_s": 30
+}

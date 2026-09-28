@@ -42,7 +42,8 @@ task cluster:down CNI=cilium
 
 `task --list` shows the rest (`exp1:run`, `smoke`, `test`, `lint`).
 
-Raw data is in `data/raw/`, with a `checksums.sha256` per trial.
+Raw data for every trial is in `data/raw/exp1/`, `data/raw/exp1b/` and
+`data/raw/positive-control/`, with a `checksums.sha256` per trial.
 
 ## License
 

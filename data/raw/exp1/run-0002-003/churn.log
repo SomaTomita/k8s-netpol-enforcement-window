@@ -1,0 +1,9 @@
+churn: failed to create churn-0071 in t-run-0002-003 at ts=1789859172.046836 (kubectl exit 1): Error from server (Forbidden): pods "churn-0071" is forbidden: unable to create new content in namespace t-run-0002-003 because it is being terminated
+churn: failed to create churn-0072 in t-run-0002-003 at ts=1789859173.064211 (kubectl exit 1): Error from server (Forbidden): pods "churn-0072" is forbidden: unable to create new content in namespace t-run-0002-003 because it is being terminated
+churn: failed to create churn-0073 in t-run-0002-003 at ts=1789859174.081697 (kubectl exit 1): Error from server (Forbidden): pods "churn-0073" is forbidden: unable to create new content in namespace t-run-0002-003 because it is being terminated
+churn: failed to create churn-0074 in t-run-0002-003 at ts=1789859175.096081 (kubectl exit 1): Error from server (Forbidden): pods "churn-0074" is forbidden: unable to create new content in namespace t-run-0002-003 because it is being terminated
+churn: failed to create churn-0075 in t-run-0002-003 at ts=1789859176.123621 (kubectl exit 1): Error from server (Forbidden): pods "churn-0075" is forbidden: unable to create new content in namespace t-run-0002-003 because it is being terminated
+churn: failed to create churn-0076 in t-run-0002-003 at ts=1789859177.117592 (kubectl exit 1): Error from server (Forbidden): pods "churn-0076" is forbidden: unable to create new content in namespace t-run-0002-003 because it is being terminated
+churn: failed to delete churn-0061 in t-run-0002-003 (kubectl exit 1): Error from server (NotFound): pods "churn-0061" not found
+churn: namespace=t-run-0002-003 scheduled=945 attempted=77 created=71 create_failed=6 deleted=61 delete_failed=1 cut_short=true elapsed_s=77.456825 first_create_ts=1789859099.827903 last_create_ts=1789859171.030190
+runner: churn rate configured_per_min=59 achieved_per_min=54.998 (recorded, not a pass/fail criterion; see npw.runner.achieved_rate_per_min)

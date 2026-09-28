@@ -1,0 +1,1 @@
+{"run_epoch_ns": 1789929441368778000, "namespace": "t-run-0001-020", "node": "npw-cilium-control-plane", "victim_restart_count": 0, "t_ready_b_ns": 2590727967, "t_ready_c_ns": 2595354926, "b_c_skew_ns": -4626959, "policy_at": "at-ready", "policy_delay_ms": 0, "policy_apply_issued_ns": 2693636000, "policy_apply_returned_ns": 2771913000, "warnings": []}
